@@ -7,12 +7,12 @@ import os
 import shutil
 from typing import Dict, Any, List, Optional, Tuple
 
-def get_db_connection():
-    """Create a connection to the SQLite database."""
-    os.makedirs('data', exist_ok=True)
-    conn = sqlite3.connect('data/kuikma_chess.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+from datetime import datetime, timedelta
+from pathlib import Path
+
+# Import existing database functionality and extend it
+from config import config
+
 
 def create_admin_user():
     """Create default admin user if it doesn't exist."""
@@ -798,7 +798,364 @@ def optimize_database():
     finally:
         conn.close()
 
+def get_db_connection():
+    """Get database connection with enhanced configuration."""
+    db_path = config.DATABASE_PATH
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.row_factory = sqlite3.Row
+    conn.execute('PRAGMA foreign_keys = ON')
+    conn.execute('PRAGMA journal_mode = WAL')
+
+    return conn
+
+def create_enhanced_tables():
+    """Create enhanced tables for user verification and subscription management."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Enhanced users table (modify existing)
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            email TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP,
+            is_admin BOOLEAN DEFAULT FALSE,
+            is_verified BOOLEAN DEFAULT FALSE,
+            verification_status TEXT DEFAULT 'pending',
+            verified_at TIMESTAMP,
+            verified_by INTEGER,
+            full_name TEXT,
+            profile_notes TEXT,
+            account_status TEXT DEFAULT 'active',
+            failed_login_attempts INTEGER DEFAULT 0,
+            locked_until TIMESTAMP,
+            FOREIGN KEY (verified_by) REFERENCES users (id)
+        )
+        ''')
+        
+        # User verification requests table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_verification_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            request_type TEXT DEFAULT 'manual_verification',
+            request_data TEXT,
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            reviewed_at TIMESTAMP,
+            reviewed_by INTEGER,
+            status TEXT DEFAULT 'pending',
+            admin_notes TEXT,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (reviewed_by) REFERENCES users (id)
+        )
+        ''')
+        
+        # User subscriptions/limits table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_subscriptions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            subscription_type TEXT DEFAULT 'basic',
+            position_limit INTEGER DEFAULT 100,
+            analysis_limit INTEGER DEFAULT 50,
+            game_upload_limit INTEGER DEFAULT 20,
+            positions_used INTEGER DEFAULT 0,
+            analyses_used INTEGER DEFAULT 0,
+            games_uploaded INTEGER DEFAULT 0,
+            reset_date DATE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_by INTEGER,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (updated_by) REFERENCES users (id)
+        )
+        ''')
+        
+        # Feature access control table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_feature_access (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            feature_name TEXT NOT NULL,
+            access_granted BOOLEAN DEFAULT FALSE,
+            granted_at TIMESTAMP,
+            granted_by INTEGER,
+            expires_at TIMESTAMP,
+            notes TEXT,
+            FOREIGN KEY (user_id) REFERENCES users (id),
+            FOREIGN KEY (granted_by) REFERENCES users (id),
+            UNIQUE(user_id, feature_name)
+        )
+        ''')
+        
+        # Admin audit log table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            admin_user_id INTEGER NOT NULL,
+            action TEXT NOT NULL,
+            target_user_id INTEGER,
+            target_resource TEXT,
+            action_data TEXT,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            ip_address TEXT,
+            user_agent TEXT,
+            FOREIGN KEY (admin_user_id) REFERENCES users (id),
+            FOREIGN KEY (target_user_id) REFERENCES users (id)
+        )
+        ''')
+        
+        # User session tracking table
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            session_token TEXT NOT NULL UNIQUE,
+            ip_address TEXT,
+            user_agent TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            FOREIGN KEY (user_id) REFERENCES users (id)
+        )
+        ''')
+        
+        # Create indexes for performance
+        indexes = [
+            'CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)',
+            'CREATE INDEX IF NOT EXISTS idx_users_verification_status ON users(verification_status)',
+            'CREATE INDEX IF NOT EXISTS idx_verification_requests_user_id ON user_verification_requests(user_id)',
+            'CREATE INDEX IF NOT EXISTS idx_verification_requests_status ON user_verification_requests(status)',
+            'CREATE INDEX IF NOT EXISTS idx_subscriptions_user_id ON user_subscriptions(user_id)',
+            'CREATE INDEX IF NOT EXISTS idx_feature_access_user_id ON user_feature_access(user_id)',
+            'CREATE INDEX IF NOT EXISTS idx_audit_log_admin_user ON admin_audit_log(admin_user_id)',
+            'CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON admin_audit_log(timestamp)',
+            'CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON user_sessions(user_id)',
+            'CREATE INDEX IF NOT EXISTS idx_sessions_token ON user_sessions(session_token)',
+        ]
+        
+        for index_sql in indexes:
+            cursor.execute(index_sql)
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error creating enhanced tables: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+def upgrade_existing_database():
+    """Upgrade existing database to support new features."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if we need to add new columns to existing users table
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        new_columns = [
+            ('is_verified', 'BOOLEAN DEFAULT FALSE'),
+            ('verification_status', 'TEXT DEFAULT "pending"'),
+            ('verified_at', 'TIMESTAMP'),
+            ('verified_by', 'INTEGER'),
+            ('full_name', 'TEXT'),
+            ('profile_notes', 'TEXT'),
+            ('account_status', 'TEXT DEFAULT "active"'),
+            ('failed_login_attempts', 'INTEGER DEFAULT 0'),
+            ('locked_until', 'TIMESTAMP'),
+        ]
+        
+        for col_name, col_def in new_columns:
+            if col_name not in columns:
+                cursor.execute(f'ALTER TABLE users ADD COLUMN {col_name} {col_def}')
+                print(f"Added column {col_name} to users table")
+        
+        # Create new tables
+        create_enhanced_tables()
+        
+        # Auto-verify admin users and existing users if configured
+        if config.AUTO_APPROVE_USERS:
+            cursor.execute('''
+                UPDATE users 
+                SET is_verified = TRUE, verification_status = 'approved', verified_at = ?
+                WHERE is_verified IS NULL OR is_verified = FALSE
+            ''', (datetime.now().isoformat(),))
+            print("Auto-approved existing users")
+        
+        # Ensure admin user is always verified
+        cursor.execute('''
+            UPDATE users 
+            SET is_verified = TRUE, verification_status = 'approved', verified_at = ?
+            WHERE is_admin = TRUE
+        ''', (datetime.now().isoformat(),))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error upgrading database: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+def create_user_subscription(user_id: int, admin_user_id: Optional[int] = None) -> bool:
+    """Create default subscription for a user."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if subscription already exists
+        cursor.execute('SELECT id FROM user_subscriptions WHERE user_id = ?', (user_id,))
+        if cursor.fetchone():
+            return True  # Already exists
+        
+        # Create default subscription
+        reset_date = (datetime.now() + timedelta(days=30)).date()
+        
+        cursor.execute('''
+            INSERT INTO user_subscriptions (
+                user_id, subscription_type, position_limit, analysis_limit, 
+                game_upload_limit, reset_date, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            user_id, 'basic',
+            config.DEFAULT_POSITION_LIMIT,
+            config.DEFAULT_ANALYSIS_LIMIT,
+            config.DEFAULT_GAME_UPLOAD_LIMIT,
+            reset_date,
+            admin_user_id
+        ))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error creating user subscription: {e}")
+        return False
+    finally:
+        conn.close()
+
+def log_admin_action(admin_user_id: int, action: str, target_user_id: Optional[int] = None, 
+                    target_resource: Optional[str] = None, action_data: Optional[Dict] = None) -> bool:
+    """Log admin action for audit trail."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO admin_audit_log (
+                admin_user_id, action, target_user_id, target_resource, action_data
+            ) VALUES (?, ?, ?, ?, ?)
+        ''', (
+            admin_user_id, action, target_user_id, target_resource,
+            json.dumps(action_data) if action_data else None
+        ))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error logging admin action: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_user_verification_stats() -> Dict[str, int]:
+    """Get user verification statistics."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        stats = {}
+        
+        # Total users
+        cursor.execute('SELECT COUNT(*) FROM users')
+        stats['total_users'] = cursor.fetchone()[0]
+        
+        # Verified users
+        cursor.execute('SELECT COUNT(*) FROM users WHERE is_verified = TRUE')
+        stats['verified_users'] = cursor.fetchone()[0]
+        
+        # Pending verification
+        cursor.execute('SELECT COUNT(*) FROM users WHERE verification_status = "pending"')
+        stats['pending_verification'] = cursor.fetchone()[0]
+        
+        # Admin users
+        cursor.execute('SELECT COUNT(*) FROM users WHERE is_admin = TRUE')
+        stats['admin_users'] = cursor.fetchone()[0]
+        
+        # Recent registrations (last 7 days)
+        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+        cursor.execute('SELECT COUNT(*) FROM users WHERE created_at > ?', (week_ago,))
+        stats['recent_registrations'] = cursor.fetchone()[0]
+        
+        return stats
+        
+    except Exception as e:
+        print(f"Error getting verification stats: {e}")
+        return {}
+    finally:
+        conn.close()
+
+def get_subscription_usage_stats() -> Dict[str, Any]:
+    """Get subscription usage statistics."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        stats = {}
+        
+        # Average usage
+        cursor.execute('''
+            SELECT 
+                AVG(positions_used) as avg_positions,
+                AVG(analyses_used) as avg_analyses,
+                AVG(games_uploaded) as avg_games
+            FROM user_subscriptions
+        ''')
+        result = cursor.fetchone()
+        if result:
+            stats['average_usage'] = {
+                'positions': round(result[0] or 0, 2),
+                'analyses': round(result[1] or 0, 2),
+                'games': round(result[2] or 0, 2)
+            }
+        
+        # Users near limits
+        cursor.execute('''
+            SELECT COUNT(*) FROM user_subscriptions 
+            WHERE positions_used >= position_limit * 0.9
+        ''')
+        stats['users_near_position_limit'] = cursor.fetchone()[0]
+        
+        cursor.execute('''
+            SELECT COUNT(*) FROM user_subscriptions 
+            WHERE analyses_used >= analysis_limit * 0.9
+        ''')
+        stats['users_near_analysis_limit'] = cursor.fetchone()[0]
+        
+        return stats
+        
+    except Exception as e:
+        print(f"Error getting subscription stats: {e}")
+        return {}
+    finally:
+        conn.close()
+
+# Initialize enhanced database on import
 if __name__ == "__main__":
+
     # Initialize the enhanced database
     init_db()
     
@@ -807,6 +1164,9 @@ if __name__ == "__main__":
     
     # Optimize database
     optimize_database()
-    
-    print("✅ Enhanced Kuikma Chess Engine database initialized successfully!")
 
+    print("Initializing enhanced database...")
+    create_enhanced_tables()
+    upgrade_existing_database()
+    print("Enhanced database initialization complete.")
+    print("✅ Enhanced Kuikma Chess Engine database initialized successfully!")

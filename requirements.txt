@@ -1,45 +1,35 @@
-# requirements.txt - Kuikma Chess Engine Dependencies
+# requirements.txt - Dependencies for Kuikma Chess Engine v2.0
 
-# Core Dependencies
-streamlit>=1.32.0
-pandas>=2.2.0
-numpy>=1.24.0
-python-chess>=1.9.0,<2.0
+# Core dependencies
+streamlit>=1.28.0
+pandas>=1.5.0
 
-# Database
-# sqlite3  # Built-in with Python
+# Optional dependencies for enhanced features
+python-dotenv>=1.0.0     # For .env file support
+cryptography>=3.4.8     # Enhanced security features
+bcrypt>=4.0.0           # Alternative password hashing
+email-validator>=1.3.0  # Email validation
 
-# Visualization
-plotly>=5.18.0
-matplotlib>=3.8.0
-seaborn>=0.13.0
+# Development dependencies (optional)
+pytest>=7.0.0           # Testing framework
+black>=22.0.0           # Code formatting
+flake8>=5.0.0          # Code linting
 
-# Data Processing
-scipy>=1.12.0
-python-dateutil>=2.8.2
+# Chess-specific dependencies (if needed)
+python-chess>=1.999     # Chess library for advanced features
+stockfish>=3.28.0       # Stockfish engine interface
 
-# Web and File Processing
-requests
-weasyprint>=61.0  # For PDF generation (optional)
+# Visualization dependencies (optional)
+plotly>=5.10.0          # Enhanced charts
+matplotlib>=3.5.0       # Additional plotting options
 
-# Enhanced Features
-cffi>=1.15.0  # For weasyprint support
+# File processing dependencies
+python-magic>=0.4.27    # File type detection
+openpyxl>=3.0.10       # Excel file support
 
-# Development Dependencies (optional)
-pytest>=7.4.0
-black>=23.0.0
-flake8>=6.0.0
+# Performance dependencies (optional)
+numba>=0.56.0          # JIT compilation for performance
+numpy>=1.21.0          # Numerical computing
 
-# Optional: Enhanced PDF generation
-# reportlab>=4.0.0
-
-# Platform-specific dependencies for weasyprint
-# Windows users may need:
-# - Microsoft Visual C++ Build Tools
-# - GTK3 runtime
-
-# Linux users may need:
-# sudo apt-get install build-essential python3-dev python3-pip python3-setuptools python3-wheel python3-cffi libcairo2 libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 libffi-dev shared-mime-info
-
-# macOS users may need:
-# brew install cairo pango gdk-pixbuf libffi
+# Backup and export dependencies
+zipfile36>=0.1.3       # Enhanced ZIP support

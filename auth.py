@@ -1,107 +1,16 @@
 # auth.py - Enhanced Authentication Module for Kuikma Chess Engine
+# auth.py - Enhanced Authentication Module with User Verification & Access Control
 import hashlib
 import sqlite3
-from datetime import datetime
-from typing import Optional, Tuple
+from datetime import datetime, timedelta
+from typing import Optional, Dict, List, Tuple
+import json
+import secrets
+from config import config
 import database
+from database import (get_db_connection, create_user_subscription, log_admin_action, 
+                     upgrade_existing_database)
 
-def hash_password(password: str) -> str:
-    """Hash a password using SHA-256."""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-def authenticate_user(email: str, password: str) -> Optional[int]:
-    """
-    Authenticate a user and return their user ID if successful.
-    
-    Args:
-        email: User's email address
-        password: User's plain text password
-        
-    Returns:
-        User ID if authentication successful, None otherwise
-    """
-    conn = database.get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        password_hash = hash_password(password)
-        
-        cursor.execute('''
-            SELECT id FROM users 
-            WHERE email = ? AND password_hash = ?
-        ''', (email.lower().strip(), password_hash))
-        
-        result = cursor.fetchone()
-        
-        if result:
-            user_id = result[0]
-            
-            # Update last login timestamp
-            cursor.execute('''
-                UPDATE users 
-                SET last_login = ? 
-                WHERE id = ?
-            ''', (datetime.now().isoformat(), user_id))
-            
-            conn.commit()
-            return user_id
-        
-        return None
-        
-    except Exception as e:
-        print(f"Authentication error: {e}")
-        return None
-    finally:
-        conn.close()
-
-def register_user(email: str, password: str) -> bool:
-    """
-    Register a new user.
-    
-    Args:
-        email: User's email address
-        password: User's plain text password
-        
-    Returns:
-        True if registration successful, False otherwise
-    """
-    conn = database.get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        email = email.lower().strip()
-        
-        # Check if user already exists
-        cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
-        if cursor.fetchone():
-            return False
-        
-        # Special handling for admin email
-        is_admin = email == 'admin@kuikma.com'
-        
-        password_hash = hash_password(password)
-        
-        cursor.execute('''
-            INSERT INTO users (email, password_hash, created_at, is_admin)
-            VALUES (?, ?, ?, ?)
-        ''', (email, password_hash, datetime.now().isoformat(), is_admin))
-        
-        user_id = cursor.lastrowid
-        
-        # Create default user settings
-        cursor.execute('''
-            INSERT INTO user_settings (user_id)
-            VALUES (?)
-        ''', (user_id,))
-        
-        conn.commit()
-        return True
-        
-    except Exception as e:
-        print(f"Registration error: {e}")
-        return False
-    finally:
-        conn.close()
 
 def is_admin_user(user_id: int) -> bool:
     """
@@ -525,21 +434,226 @@ def get_user_statistics(user_id: int) -> dict:
     finally:
         conn.close()
 
-# Initialization function
-def ensure_admin_user():
-    """Ensure the admin user exists, create if it doesn't."""
-    conn = database.get_db_connection()
+
+def hash_password(password: str) -> str:
+    """Hash a password using SHA-256."""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def generate_session_token() -> str:
+    """Generate a secure session token."""
+    return secrets.token_urlsafe(32)
+
+def authenticate_user(email: str, password: str) -> Optional[Dict[str, any]]:
+    """
+    Authenticate a user and return their info if successful.
+    
+    Args:
+        email: User's email address
+        password: User's plain text password
+        
+    Returns:
+        User info dictionary if authentication successful, None otherwise
+    """
+    conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        cursor.execute('SELECT id FROM users WHERE email = ?', ('admin@kuikma.com',))
+        email = email.lower().strip()
+        
+        # Check for account lockout
+        cursor.execute('''
+            SELECT locked_until, failed_login_attempts 
+            FROM users WHERE email = ?
+        ''', (email,))
+        
+        lock_info = cursor.fetchone()
+        if lock_info and lock_info[0]:
+            locked_until = datetime.fromisoformat(lock_info[0])
+            if datetime.now() < locked_until:
+                return {'error': 'account_locked', 'locked_until': lock_info[0]}
+        
+        password_hash = hash_password(password)
+        
+        cursor.execute('''
+            SELECT id, email, is_admin, is_verified, verification_status, 
+                   account_status, failed_login_attempts, full_name
+            FROM users 
+            WHERE email = ? AND password_hash = ?
+        ''', (email, password_hash))
+        
+        result = cursor.fetchone()
+        
+        if result:
+            user_id, email, is_admin, is_verified, verification_status, \
+            account_status, failed_attempts, full_name = result
+            
+            # Check account status
+            if account_status != 'active':
+                return {'error': 'account_inactive', 'status': account_status}
+            
+            # Reset failed login attempts on successful login
+            cursor.execute('''
+                UPDATE users 
+                SET last_login = ?, failed_login_attempts = 0, locked_until = NULL
+                WHERE id = ?
+            ''', (datetime.now().isoformat(), user_id))
+            
+            # Create session token
+            session_token = generate_session_token()
+            expires_at = datetime.now() + timedelta(seconds=config.SESSION_TIMEOUT)
+            
+            cursor.execute('''
+                INSERT INTO user_sessions (user_id, session_token, expires_at)
+                VALUES (?, ?, ?)
+            ''', (user_id, session_token, expires_at))
+            
+            conn.commit()
+            
+            return {
+                'id': user_id,
+                'email': email,
+                'is_admin': bool(is_admin),
+                'is_verified': bool(is_verified),
+                'verification_status': verification_status,
+                'full_name': full_name,
+                'session_token': session_token
+            }
+        else:
+            # Increment failed login attempts
+            cursor.execute('''
+                UPDATE users 
+                SET failed_login_attempts = failed_login_attempts + 1
+                WHERE email = ?
+            ''', (email,))
+            
+            # Check if we should lock the account
+            cursor.execute('''
+                SELECT failed_login_attempts FROM users WHERE email = ?
+            ''', (email,))
+            
+            attempts_result = cursor.fetchone()
+            if attempts_result and attempts_result[0] >= config.MAX_LOGIN_ATTEMPTS:
+                locked_until = datetime.now() + timedelta(seconds=config.LOCKOUT_DURATION)
+                cursor.execute('''
+                    UPDATE users 
+                    SET locked_until = ?
+                    WHERE email = ?
+                ''', (locked_until.isoformat(), email))
+            
+            conn.commit()
+            return None
+        
+    except Exception as e:
+        print(f"Authentication error: {e}")
+        return None
+    finally:
+        conn.close()
+
+def register_user(email: str, password: str, full_name: str = "") -> Dict[str, any]:
+    """
+    Register a new user with enhanced verification system.
+    
+    Args:
+        email: User's email address
+        password: User's plain text password
+        full_name: User's full name (optional)
+        
+    Returns:
+        Dictionary with registration result
+    """
+    if not config.ENABLE_USER_REGISTRATION:
+        return {'success': False, 'error': 'registration_disabled'}
+    
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        email = email.lower().strip()
+        
+        # Check if user already exists
+        cursor.execute('SELECT id FROM users WHERE email = ?', (email,))
+        if cursor.fetchone():
+            return {'success': False, 'error': 'email_exists'}
+        
+        # Check if this is an admin email (admins cannot register, only login)
+        if email == config.ADMIN_EMAIL:
+            return {'success': False, 'error': 'admin_cannot_register'}
+        
+        password_hash = hash_password(password)
+        
+        # Determine initial verification status
+        is_verified = config.AUTO_APPROVE_USERS
+        verification_status = 'approved' if config.AUTO_APPROVE_USERS else 'pending'
+        verified_at = datetime.now().isoformat() if config.AUTO_APPROVE_USERS else None
+        
+        cursor.execute('''
+            INSERT INTO users (
+                email, password_hash, created_at, is_admin, is_verified, 
+                verification_status, verified_at, full_name, account_status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            email, password_hash, datetime.now().isoformat(), False,
+            is_verified, verification_status, verified_at, full_name, 'active'
+        ))
+        
+        user_id = cursor.lastrowid
+        
+        # Create default user settings
+        cursor.execute('''
+            INSERT INTO user_settings (user_id)
+            VALUES (?)
+        ''', (user_id,))
+        
+        # Create default subscription
+        create_user_subscription(user_id)
+        
+        # Create verification request if manual approval required
+        if not config.AUTO_APPROVE_USERS:
+            cursor.execute('''
+                INSERT INTO user_verification_requests (
+                    user_id, request_type, request_data
+                ) VALUES (?, ?, ?)
+            ''', (user_id, 'registration', json.dumps({'full_name': full_name})))
+        
+        conn.commit()
+        
+        return {
+            'success': True,
+            'user_id': user_id,
+            'verification_required': not config.AUTO_APPROVE_USERS,
+            'message': 'Registration successful. Please wait for admin approval.' if not config.AUTO_APPROVE_USERS else 'Registration successful!'
+        }
+        
+    except Exception as e:
+        print(f"Registration error: {e}")
+        return {'success': False, 'error': 'registration_failed', 'details': str(e)}
+    finally:
+        conn.close()
+
+def ensure_admin_user():
+    """Ensure the admin user exists from .env configuration."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        admin_email = config.ADMIN_EMAIL
+        admin_password = config.ADMIN_PASSWORD
+        admin_name = config.ADMIN_NAME
+        
+        cursor.execute('SELECT id FROM users WHERE email = ?', (admin_email,))
         if not cursor.fetchone():
             # Create admin user
-            password_hash = hash_password('passpass')
+            password_hash = hash_password(admin_password)
             cursor.execute('''
-                INSERT INTO users (email, password_hash, created_at, is_admin)
-                VALUES (?, ?, ?, ?)
-            ''', ('admin@kuikma.com', password_hash, datetime.now().isoformat(), True))
+                INSERT INTO users (
+                    email, password_hash, created_at, is_admin, is_verified,
+                    verification_status, verified_at, full_name, account_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                admin_email, password_hash, datetime.now().isoformat(),
+                True, True, 'approved', datetime.now().isoformat(),
+                admin_name, 'active'
+            ))
             
             user_id = cursor.lastrowid
             
@@ -549,15 +663,334 @@ def ensure_admin_user():
                 VALUES (?)
             ''', (user_id,))
             
+            # Create unlimited subscription for admin
+            cursor.execute('''
+                INSERT INTO user_subscriptions (
+                    user_id, subscription_type, position_limit, analysis_limit, 
+                    game_upload_limit, updated_by
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            ''', (user_id, 'admin', 999999, 999999, 999999, user_id))
+            
             conn.commit()
-            print("✅ Admin user created: admin@kuikma.com / passpass")
+            print(f"✅ Admin user created: {admin_email}")
+        else:
+            # Update existing admin user credentials if they changed
+            password_hash = hash_password(admin_password)
+            cursor.execute('''
+                UPDATE users 
+                SET password_hash = ?, full_name = ?, is_verified = TRUE, 
+                    verification_status = 'approved'
+                WHERE email = ? AND is_admin = TRUE
+            ''', (password_hash, admin_name, admin_email))
+            conn.commit()
         
     except Exception as e:
         print(f"Error ensuring admin user: {e}")
     finally:
         conn.close()
 
+def verify_user(user_id: int, admin_user_id: int, approved: bool = True, 
+               admin_notes: str = "") -> bool:
+    """
+    Verify or reject a user registration.
+    
+    Args:
+        user_id: ID of user to verify
+        admin_user_id: ID of admin performing verification
+        approved: Whether to approve or reject
+        admin_notes: Admin notes for the decision
+        
+    Returns:
+        True if verification successful, False otherwise
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        verification_status = 'approved' if approved else 'rejected'
+        verified_at = datetime.now().isoformat() if approved else None
+        
+        # Update user verification status
+        cursor.execute('''
+            UPDATE users 
+            SET is_verified = ?, verification_status = ?, verified_at = ?, verified_by = ?
+            WHERE id = ?
+        ''', (approved, verification_status, verified_at, admin_user_id, user_id))
+        
+        # Update verification request if exists
+        cursor.execute('''
+            UPDATE user_verification_requests 
+            SET status = ?, reviewed_at = ?, reviewed_by = ?, admin_notes = ?
+            WHERE user_id = ? AND status = 'pending'
+        ''', (verification_status, datetime.now().isoformat(), admin_user_id, admin_notes, user_id))
+        
+        # Log admin action
+        log_admin_action(
+            admin_user_id, 
+            f'user_verification_{verification_status}',
+            user_id,
+            'user_account',
+            {'admin_notes': admin_notes}
+        )
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error verifying user: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_users_for_verification() -> List[Dict[str, any]]:
+    """Get list of users pending verification."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            SELECT u.id, u.email, u.full_name, u.created_at, u.verification_status,
+                   vr.request_data, vr.requested_at
+            FROM users u
+            LEFT JOIN user_verification_requests vr ON u.id = vr.user_id
+            WHERE u.verification_status = 'pending' AND u.is_admin = FALSE
+            ORDER BY u.created_at ASC
+        ''')
+        
+        results = cursor.fetchall()
+        
+        users = []
+        for row in results:
+            user_data = {
+                'id': row[0],
+                'email': row[1],
+                'full_name': row[2] or '',
+                'created_at': row[3],
+                'verification_status': row[4],
+                'request_data': json.loads(row[5]) if row[5] else {},
+                'requested_at': row[6]
+            }
+            users.append(user_data)
+        
+        return users
+        
+    except Exception as e:
+        print(f"Error getting users for verification: {e}")
+        return []
+    finally:
+        conn.close()
+
+def check_user_access(user_id: int, feature: str) -> bool:
+    """
+    Check if user has access to a specific feature.
+    
+    Args:
+        user_id: User's ID
+        feature: Feature name to check
+        
+    Returns:
+        True if user has access, False otherwise
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Get user info
+        cursor.execute('''
+            SELECT is_admin, is_verified, verification_status 
+            FROM users WHERE id = ?
+        ''', (user_id,))
+        
+        result = cursor.fetchone()
+        if not result:
+            return False
+        
+        is_admin, is_verified, verification_status = result
+        
+        # Determine user type
+        if is_admin:
+            user_type = 'admin'
+        elif is_verified and verification_status == 'approved':
+            user_type = 'verified_user'
+        else:
+            user_type = 'unverified_user'
+        
+        # Get permissions for user type
+        permissions = config.get_user_permissions(user_type)
+        
+        # Check specific feature access
+        if feature in permissions:
+            return permissions[feature]
+        
+        # Check custom feature access
+        cursor.execute('''
+            SELECT access_granted, expires_at 
+            FROM user_feature_access 
+            WHERE user_id = ? AND feature_name = ?
+        ''', (user_id, feature))
+        
+        custom_access = cursor.fetchone()
+        if custom_access:
+            granted, expires_at = custom_access
+            if granted:
+                if not expires_at or datetime.now() < datetime.fromisoformat(expires_at):
+                    return True
+        
+        return False
+        
+    except Exception as e:
+        print(f"Error checking user access: {e}")
+        return False
+    finally:
+        conn.close()
+
+def get_user_subscription(user_id: int) -> Optional[Dict[str, any]]:
+    """Get user subscription information."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            SELECT subscription_type, position_limit, analysis_limit, game_upload_limit,
+                   positions_used, analyses_used, games_uploaded, reset_date
+            FROM user_subscriptions 
+            WHERE user_id = ?
+        ''', (user_id,))
+        
+        result = cursor.fetchone()
+        if result:
+            return {
+                'subscription_type': result[0],
+                'position_limit': result[1],
+                'analysis_limit': result[2],
+                'game_upload_limit': result[3],
+                'positions_used': result[4],
+                'analyses_used': result[5],
+                'games_uploaded': result[6],
+                'reset_date': result[7],
+                'positions_remaining': result[1] - result[4],
+                'analyses_remaining': result[2] - result[5],
+                'games_remaining': result[3] - result[6]
+            }
+        
+        return None
+        
+    except Exception as e:
+        print(f"Error getting user subscription: {e}")
+        return None
+    finally:
+        conn.close()
+
+def update_user_subscription(user_id: int, admin_user_id: int, **kwargs) -> bool:
+    """Update user subscription limits."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Build update query dynamically
+        allowed_fields = ['position_limit', 'analysis_limit', 'game_upload_limit', 
+                         'subscription_type', 'positions_used', 'analyses_used', 'games_uploaded']
+        
+        update_fields = []
+        values = []
+        
+        for field, value in kwargs.items():
+            if field in allowed_fields:
+                update_fields.append(f"{field} = ?")
+                values.append(value)
+        
+        if not update_fields:
+            return False
+        
+        values.extend([datetime.now().isoformat(), admin_user_id, user_id])
+        
+        query = f'''
+            UPDATE user_subscriptions 
+            SET {", ".join(update_fields)}, updated_at = ?, updated_by = ?
+            WHERE user_id = ?
+        '''
+        
+        cursor.execute(query, values)
+        
+        # Log admin action
+        log_admin_action(
+            admin_user_id,
+            'subscription_update',
+            user_id,
+            'user_subscription',
+            kwargs
+        )
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        print(f"Error updating user subscription: {e}")
+        return False
+    finally:
+        conn.close()
+
+def can_use_resource(user_id: int, resource_type: str) -> Tuple[bool, Optional[str]]:
+    """
+    Check if user can use a resource (position, analysis, etc.) based on limits.
+    
+    Args:
+        user_id: User's ID
+        resource_type: Type of resource ('position', 'analysis', 'game_upload')
+        
+    Returns:
+        Tuple of (can_use, reason_if_not)
+    """
+    subscription = get_user_subscription(user_id)
+    if not subscription:
+        return False, "No subscription found"
+    
+    if resource_type == 'position':
+        if subscription['positions_used'] >= subscription['position_limit']:
+            return False, f"Position limit reached ({subscription['position_limit']})"
+    elif resource_type == 'analysis':
+        if subscription['analyses_used'] >= subscription['analysis_limit']:
+            return False, f"Analysis limit reached ({subscription['analysis_limit']})"
+    elif resource_type == 'game_upload':
+        if subscription['games_uploaded'] >= subscription['game_upload_limit']:
+            return False, f"Game upload limit reached ({subscription['game_upload_limit']})"
+    
+    return True, None
+
+def increment_resource_usage(user_id: int, resource_type: str, amount: int = 1) -> bool:
+    """Increment resource usage counter."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        field_map = {
+            'position': 'positions_used',
+            'analysis': 'analyses_used',
+            'game_upload': 'games_uploaded'
+        }
+        
+        field = field_map.get(resource_type)
+        if not field:
+            return False
+        
+        cursor.execute(f'''
+            UPDATE user_subscriptions 
+            SET {field} = {field} + ?, updated_at = ?
+            WHERE user_id = ?
+        ''', (amount, datetime.now().isoformat(), user_id))
+        
+        conn.commit()
+        return cursor.rowcount > 0
+        
+    except Exception as e:
+        print(f"Error incrementing resource usage: {e}")
+        return False
+    finally:
+        conn.close()
+
+# Initialize on import
 if __name__ == "__main__":
-    # Ensure admin user exists
+    print("Initializing enhanced authentication...")
+    upgrade_existing_database()
     ensure_admin_user()
     print("Authentication module initialized.")
