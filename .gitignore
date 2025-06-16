@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Kuikma extensions
+*.html
+*.db
+
 # C extensions
 *.so
 
