@@ -1526,46 +1526,41 @@ def load_random_position():
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
-        
-        cursor.execute('SELECT COUNT(*) FROM positions')
-        total_positions = cursor.fetchone()[0]
-        
-        if total_positions == 0:
+
+        # pick one random row directly
+        cursor.execute('SELECT * FROM positions ORDER BY RANDOM() LIMIT 1')
+        position_row = cursor.fetchone()
+
+        if not position_row:
             st.error("No positions available in database.")
             return
-        
-        random_offset = random.randint(0, total_positions - 1)
-        
-        cursor.execute('''
-            SELECT * FROM positions 
-            ORDER BY id 
-            LIMIT 1 OFFSET ?
-        ''', (random_offset,))
-        
-        position_row = cursor.fetchone()
-        
-        if position_row:
-            position_data = dict(position_row)
-            position_data = parse_position_json_fields(position_data)
-            
-            # Load associated moves
-            cursor.execute('''
-                SELECT * FROM moves 
-                WHERE position_id = ? 
-                ORDER BY rank ASC
-            ''', (position_data['id'],))
-            
-            moves = cursor.fetchall()
-            position_data['top_moves'] = [parse_move_json_fields(dict(move)) for move in moves]
-            
-            st.session_state.current_position = position_data
-            clear_move_analysis()
-            start_position_timer()
-        
+
+        position_data = dict(position_row)
+        position_data = parse_position_json_fields(position_data)
+
+        # load associated moves
+        cursor.execute(
+            'SELECT * FROM moves WHERE position_id = ? ORDER BY rank ASC',
+            (position_data['id'],)
+        )
+        moves = [parse_move_json_fields(dict(m)) for m in cursor.fetchall()]
+        position_data['top_moves'] = moves
+
+        # ensure last_move even if column was empty
+        if not position_data['last_move'] and moves:
+            position_data['last_move'] = moves[-1]
+            position_data['move_number'] = moves[-1].get('move_number',
+                                                         position_data.get('move_number', 0))
+
+        st.session_state.current_position = position_data
+        clear_move_analysis()
+        start_position_timer()
+
         conn.close()
-        
+
     except Exception as e:
         st.error(f"Error loading random position: {e}")
+
 
 def load_next_position():
     """Load the next position in sequence."""
