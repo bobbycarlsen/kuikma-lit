@@ -63,7 +63,22 @@ class JSONLProcessor:
         
         logger.info(f"JSONL processing complete: {self.valid_count} valid positions from {self.processed_count} lines")
         return positions
-    
+
+    def _extract_engine_depth(self, data: Dict[str, Any]) -> int:
+        """Extract engine depth from data"""
+        # Check for top-level depth first
+        if 'depth' in data:
+            return self._safe_int(data['depth'])
+        
+        # Extract from first move in top_moves if available
+        top_moves = data.get('top_moves', [])
+        if top_moves and isinstance(top_moves[0], dict):
+            first_move = top_moves[0]
+            if 'depth' in first_move:
+                return self._safe_int(first_move['depth'])
+        
+        return 0  # Default
+        
     def _validate_and_normalize_position(self, data: Dict[str, Any], line_num: int) -> Optional[Dict[str, Any]]:
         """Validate and normalize comprehensive position data from JSONL sample structure"""
         try:
@@ -100,7 +115,7 @@ class JSONLProcessor:
                 # === ENGINE ANALYSIS DATA ===
                 'top_moves': self._extract_top_moves(data),
                 'evaluation': self._extract_evaluation(data),
-                'engine_depth': self._safe_int(data.get('depth')),
+                'engine_depth': self._extract_engine_depth(data),
                 'analysis_time': self._safe_float(data.get('time')),
                 
                 # === POSITION METRICS (Rich JSONL Data) ===
