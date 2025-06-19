@@ -1943,7 +1943,6 @@ def generate_interactive_html_report(analysis: Dict[str, Any]):
             except Exception as e:
                 st.warning(f"Download not available: {e}")
             
-            st.rerun()
         else:
             st.error("❌ Failed to generate interactive HTML report")
     
@@ -2032,7 +2031,6 @@ def generate_enhanced_interactive_html_report(analysis: Dict[str, Any]):
             except Exception as e:
                 st.warning(f"Download not available: {e}")
             
-            st.rerun()
         else:
             st.error("❌ Failed to generate enhanced interactive HTML report")
     
