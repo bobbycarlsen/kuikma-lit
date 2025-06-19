@@ -689,9 +689,9 @@ def create_space_control_board_plotly(metrics: Dict[str, Any], flipped: bool = F
                     else:  # Neutral
                         # Chess board pattern
                         is_light = (rank + file) % 2 == 0
-                        color = 'rgba(240, 217, 181, 0.5)' if is_light else 'rgba(181, 136, 99, 0.5)'
-                        text_color = 'gray'
-                        symbol = ''
+                        color = '#008000' # 'rgba(240, 217, 181, 0.5)' if is_light else 'rgba(181, 136, 99, 0.5)'
+                        text_color = 'white' # 'gray'
+                        symbol = '🟢'
                     
                     # Adjust coordinates for flipping
                     display_rank = 7 - rank if flipped else rank

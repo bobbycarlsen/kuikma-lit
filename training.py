@@ -11,6 +11,7 @@ import chess.svg
 # Import required modules
 import database
 import chess_board
+from interactive_html_generator import InteractiveHTMLGenerator
 from html_generator import ComprehensiveHTMLGenerator
 from jsonl_processor import JSONLProcessor
 import re
@@ -38,6 +39,7 @@ def display_training_interface():
     else:
         load_initial_position()
 
+# Update the initialization function to include the interactive generator
 def initialize_training_session():
     """Initialize training session state variables."""
     if 'training_session_id' not in st.session_state:
@@ -63,6 +65,10 @@ def initialize_training_session():
     
     if 'html_generator' not in st.session_state:
         st.session_state.html_generator = ComprehensiveHTMLGenerator()
+    
+    # Add interactive HTML generator
+    if 'interactive_html_generator' not in st.session_state:
+        st.session_state.interactive_html_generator = InteractiveHTMLGenerator()
     
     if 'show_analysis_after_move' not in st.session_state:
         st.session_state.show_analysis_after_move = False
@@ -292,6 +298,7 @@ def display_previous_moves_section(position_data: Dict[str, Any]):
         </div>
         """, unsafe_allow_html=True)
 
+# Update the enhanced position interface to include both HTML options
 def display_enhanced_position_interface():
     """Enhanced position interface with info bar and controlled insights."""
     position_data = st.session_state.current_position
@@ -320,20 +327,32 @@ def display_enhanced_position_interface():
             display_legal_move_selection(position_data)
         else:
             st.success("✅ Move submitted!")
-            st.info("💡 Click 'Show Analysis' to load insights and statistics")
+            st.info("💡 Click analysis buttons to load insights and statistics")
             
-            # Analysis control buttons
-            analysis_col1, analysis_col2 = st.columns(2)
-            
+            # Enhanced analysis control buttons
+            analysis_col1, analysis_col2, analysis_col3, analysis_col4 = st.columns(4)
+
             with analysis_col1:
                 if st.button("📊 Show Analysis", use_container_width=True, type="primary", key="show_analysis_btn"):
                     st.session_state.show_analysis_requested = True
                     st.rerun()
-            
+
             with analysis_col2:
-                if st.button("📄 Generate HTML", use_container_width=True, key="generate_html_btn"):
+                if st.button("📄 Classic HTML", use_container_width=True, key="generate_html_btn"):
                     st.session_state.show_analysis_requested = True
                     submit_move_with_html_generation()
+                    st.rerun()
+
+            with analysis_col3:
+                if st.button("🎮 Interactive HTML", use_container_width=True, key="generate_interactive_html_btn"):
+                    st.session_state.show_analysis_requested = True
+                    submit_move_with_interactive_html_generation()
+                    st.rerun()
+            
+            with analysis_col4:
+                if st.button("📋 Both Reports", use_container_width=True, key="generate_both_html_btn"):
+                    st.session_state.show_analysis_requested = True
+                    submit_move_with_both_html_generation()
                     st.rerun()
     
     # CRITICAL: Only display analysis AFTER user requests it
@@ -382,6 +401,73 @@ def submit_move_with_html_generation():
         
     except Exception as e:
         st.error(f"❌ Error generating epic HTML: {str(e)}")
+
+# Enhanced function to generate both HTML reports
+def submit_move_with_both_html_generation():
+    """Submit move and generate both classic and interactive HTML analysis."""
+    if 'last_move_analysis' not in st.session_state:
+        st.error("No move analysis data available")
+        return
+    
+    analysis = st.session_state.last_move_analysis
+    position_data = analysis.get('position_data', {})
+    move_data = analysis.get('move_data', {})
+    
+    try:
+        # Use both HTML generators
+        if 'html_generator' not in st.session_state:
+            st.session_state.html_generator = ComprehensiveHTMLGenerator()
+        if 'interactive_html_generator' not in st.session_state:
+            st.session_state.interactive_html_generator = InteractiveHTMLGenerator()
+            
+        html_generator = st.session_state.html_generator
+        interactive_generator = st.session_state.interactive_html_generator
+        
+        with st.spinner("🎨 Generating comprehensive analysis reports..."):
+            # Generate classic HTML
+            classic_output_path = html_generator.generate_epic_analysis_report(
+                position_data=position_data,
+                selected_move_data=move_data
+            )
+            
+            # Generate interactive HTML
+            interactive_output_path = interactive_generator.generate_epic_analysis_report(
+                position_data=position_data,
+                selected_move_data=move_data
+            )
+        
+        if classic_output_path and interactive_output_path:
+            st.success(f"✅ Both HTML analysis reports generated!")
+            
+            # Offer downloads for both
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                with open(classic_output_path, 'r', encoding='utf-8') as f:
+                    classic_content = f.read()
+                
+                st.download_button(
+                    label="📥 Download Classic Analysis",
+                    data=classic_content,
+                    file_name=f"classic_position_{position_data.get('id', 'unknown')}_analysis.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+            
+            with col2:
+                with open(interactive_output_path, 'r', encoding='utf-8') as f:
+                    interactive_content = f.read()
+                
+                st.download_button(
+                    label="📥 Download Interactive Analysis",
+                    data=interactive_content,
+                    file_name=f"interactive_position_{position_data.get('id', 'unknown')}_analysis.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+        
+    except Exception as e:
+        st.error(f"❌ Error generating HTML reports: {str(e)}")
 
 def display_chess_board(position_data: Dict[str, Any]):
     """Display chess board with flip functionality."""
@@ -1009,31 +1095,12 @@ def display_performance_insights(result: str, found_move_data: Dict[str, Any], t
     for rec in recommendations:
         st.success(f"🎓 {rec}")
 
+# Replace the existing HTML generation section in display_move_analysis_results() with:
 def display_html_generation_section(analysis: Dict[str, Any]):
-    """Display HTML generation section with preview."""
-    st.markdown("### 📚 Comprehensive Analysis Report")
-    
-    col1, col2 = st.columns([1, 1])
-    
-    with col1:
-        if st.button("🎨 Generate Comprehensive HTML Report", type="primary", use_container_width=True):
-            generate_comprehensive_html_report(analysis)
-    
-    with col2:
-        if analysis.get('generated_html') and analysis.get('html_path'):
-            try:
-                with open(analysis['html_path'], 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-                
-                st.download_button(
-                    label="📥 Download HTML Report",
-                    data=html_content,
-                    file_name=f"chess_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
-            except Exception as e:
-                st.warning(f"Download not available: {e}")
+    """Display updated HTML generation section with both options."""
+    display_html_generation_options(analysis)
+
+
 
 def generate_comprehensive_html_report(analysis: Dict[str, Any]):
     '''Generate comprehensive HTML report with enhanced features.'''
@@ -1522,7 +1589,7 @@ def get_current_position_time():
 
 # Position loading functions
 def load_random_position():
-    """Load a random position from the database."""
+    """Load a random position from the database with enhanced PV handling."""
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
@@ -1538,12 +1605,20 @@ def load_random_position():
         position_data = dict(position_row)
         position_data = parse_position_json_fields(position_data)
 
-        # load associated moves
+        # load associated moves with enhanced PV handling
         cursor.execute(
             'SELECT * FROM moves WHERE position_id = ? ORDER BY rank ASC',
             (position_data['id'],)
         )
         moves = [parse_move_json_fields(dict(m)) for m in cursor.fetchall()]
+        
+        # Ensure PV data is available for all moves
+        for move in moves:
+            if not move.get('pv') and not move.get('principal_variation'):
+                # Create basic PV from move notation
+                move['pv'] = move.get('move', '')
+                move['principal_variation'] = move.get('move', '')
+        
         position_data['top_moves'] = moves
 
         # ensure last_move even if column was empty
@@ -1560,7 +1635,6 @@ def load_random_position():
 
     except Exception as e:
         st.error(f"Error loading random position: {e}")
-
 
 def load_next_position():
     """Load the next position in sequence."""
@@ -1688,7 +1762,7 @@ def load_initial_position():
 
 # Utility functions
 def parse_position_json_fields(position_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse JSON fields in position data."""
+    """Parse JSON fields in position data with enhanced PV handling."""
     json_fields = [
         'material_analysis', 'mobility_analysis', 'king_safety_analysis', 
         'center_control_analysis', 'pawn_structure_analysis', 'piece_development_analysis',
@@ -1707,7 +1781,7 @@ def parse_position_json_fields(position_data: Dict[str, Any]) -> Dict[str, Any]:
     return position_data
 
 def parse_move_json_fields(move_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Parse JSON fields in move data."""
+    """Parse JSON fields in move data with enhanced PV handling."""
     json_fields = ['tactics', 'position_impact', 'ml_evaluation']
     
     for field in json_fields:
@@ -1720,6 +1794,14 @@ def parse_move_json_fields(move_data: Dict[str, Any]) -> Dict[str, Any]:
     
     # Add rank for UI display
     move_data['rank'] = move_data.get('rank', 1)
+    
+    # Ensure PV is available - check multiple field names
+    if not move_data.get('pv') and move_data.get('principal_variation'):
+        move_data['pv'] = move_data['principal_variation']
+    elif not move_data.get('pv') and not move_data.get('principal_variation'):
+        # If no PV available, create basic one with the move
+        move_data['pv'] = move_data.get('move', '')
+        move_data['principal_variation'] = move_data.get('move', '')
     
     return move_data
 
@@ -1763,4 +1845,306 @@ def convert_to_piece_icons(move_string: str) -> str:
 def submit_move(selected_move_data: Dict[str, Any], generate_html: bool = False):
     """Original submit move function for backward compatibility."""
     submit_legal_move(selected_move_data, generate_html)
+
+# Add this function to training.py
+def display_html_generation_options(analysis: Dict[str, Any]):
+    """Display enhanced HTML generation options with both templates."""
+    st.markdown("### 📚 Generate Analysis Reports")
+    
+    col1, col2, col3, col4 = st.columns(4)
+    
+    with col1:
+        if st.button("📄 Classic HTML Report", use_container_width=True, key="classic_html"):
+            generate_classic_html_report(analysis)
+    
+    with col2:
+        if st.button("🎮 Interactive HTML Report", use_container_width=True, key="interactive_html"):
+            generate_enhanced_interactive_html_report(analysis)
+    
+    with col3:
+        if st.button("📋 Both Reports", use_container_width=True, key="both_html"):
+            generate_both_html_reports(analysis)
+    
+    with col4:
+        if st.button("🔍 Preview Features", use_container_width=True, key="preview_features"):
+            display_html_features_comparison()
+
+def generate_classic_html_report(analysis: Dict[str, Any]):
+    """Generate HTML report using original generator."""
+    try:
+        position_data = analysis.get('position_data', {})
+        user_move_data = analysis.get('move_data', {})
+        
+        # Use original HTML generator
+        from html_generator import ComprehensiveHTMLGenerator  # Your original
+        html_generator = ComprehensiveHTMLGenerator()
+        
+        with st.spinner("🎨 Generating classic analysis report..."):
+            output_path = html_generator.generate_epic_analysis_report(
+                position_data=position_data,
+                selected_move_data=user_move_data
+            )
+        
+        if output_path:
+            st.success(f"✅ Classic HTML report generated!")
+            
+            with open(output_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            st.download_button(
+                label="📥 Download Classic Report",
+                data=html_content,
+                file_name=f"classic_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                mime="text/html",
+                use_container_width=True
+            )
+    except Exception as e:
+        st.error(f"❌ Error generating classic HTML: {e}")
+
+
+def generate_interactive_html_report(analysis: Dict[str, Any]):
+    '''Generate interactive HTML report with enhanced features.'''
+    try:
+        position_data = analysis.get('position_data', {})
+        user_move_data = analysis.get('move_data', {})
+        
+        # Use interactive HTML generator
+        if 'interactive_html_generator' not in st.session_state:
+            st.session_state.interactive_html_generator = InteractiveHTMLGenerator()
+        
+        interactive_generator = st.session_state.interactive_html_generator
+        
+        with st.spinner("🎮 Generating interactive chess analysis report..."):
+            output_path = interactive_generator.generate_epic_analysis_report(
+                position_data=position_data,
+                selected_move_data=user_move_data
+            )
+        
+        if output_path:
+            st.success(f"✅ Interactive comprehensive HTML report generated!")
+            
+            # Update analysis with new path
+            analysis['generated_interactive_html'] = True
+            analysis['interactive_html_path'] = output_path
+            st.session_state.last_move_analysis = analysis
+            
+            # Offer download
+            try:
+                with open(output_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                
+                st.download_button(
+                    label="📥 Download Interactive Report",
+                    data=html_content,
+                    file_name=f"interactive_chess_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.warning(f"Download not available: {e}")
+            
+            st.rerun()
+        else:
+            st.error("❌ Failed to generate interactive HTML report")
+    
+    except Exception as e:
+        st.error(f"❌ Error generating interactive HTML report: {e}")
+        import traceback
+        st.error(traceback.format_exc())
+
+
+def submit_move_with_interactive_html_generation():
+    """Submit move and generate enhanced interactive HTML analysis."""
+    if 'last_move_analysis' not in st.session_state:
+        st.error("No move analysis data available")
+        return
+    
+    analysis = st.session_state.last_move_analysis
+    position_data = analysis.get('position_data', {})
+    move_data = analysis.get('move_data', {})
+    
+    try:
+        # Use the enhanced interactive HTML generator
+        if 'interactive_html_generator' not in st.session_state:
+            st.session_state.interactive_html_generator = InteractiveHTMLGenerator()
+            
+        interactive_generator = st.session_state.interactive_html_generator
+        
+        with st.spinner("🎮 Generating interactive analysis with enhanced features..."):
+            output_path = interactive_generator.generate_epic_analysis_report(
+                position_data=position_data,
+                selected_move_data=move_data
+            )
+        
+        if output_path:
+            st.success(f"✅ Enhanced interactive HTML analysis generated!")
+            st.info("🎮 Features: Working chess boards, spatial analysis comparison, variation boards, enhanced visualizations")
+            
+            # Read and offer download
+            with open(output_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            
+            st.download_button(
+                label="📥 Download Enhanced Interactive Analysis",
+                data=html_content,
+                file_name=f"enhanced_interactive_position_{position_data.get('id', 'unknown')}_analysis.html",
+                mime="text/html",
+                use_container_width=True
+            )
+        
+    except Exception as e:
+        st.error(f"❌ Error generating enhanced interactive HTML: {str(e)}")
+
+def generate_enhanced_interactive_html_report(analysis: Dict[str, Any]):
+    """Generate enhanced interactive HTML report with all fixes."""
+    try:
+        position_data = analysis.get('position_data', {})
+        user_move_data = analysis.get('move_data', {})
+        
+        # Use enhanced interactive HTML generator
+        if 'interactive_html_generator' not in st.session_state:
+            st.session_state.interactive_html_generator = InteractiveHTMLGenerator()
+        
+        interactive_generator = st.session_state.interactive_html_generator
+        
+        with st.spinner("🎮 Generating enhanced interactive chess analysis report..."):
+            output_path = interactive_generator.generate_epic_analysis_report(
+                position_data=position_data,
+                selected_move_data=user_move_data
+            )
+        
+        if output_path:
+            st.success(f"✅ Enhanced interactive HTML report generated!")
+            st.info("🎮 **New Features:** Working chess boards, spatial analysis comparison, variation progression, enhanced color palette!")
+            
+            # Offer download
+            try:
+                with open(output_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+                
+                st.download_button(
+                    label="📥 Download Enhanced Interactive Report",
+                    data=html_content,
+                    file_name=f"enhanced_interactive_chess_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+            except Exception as e:
+                st.warning(f"Download not available: {e}")
+            
+            st.rerun()
+        else:
+            st.error("❌ Failed to generate enhanced interactive HTML report")
+    
+    except Exception as e:
+        st.error(f"❌ Error generating enhanced interactive HTML report: {e}")
+        import traceback
+        st.error(traceback.format_exc())
+
+def generate_both_html_reports(analysis: Dict[str, Any]):
+    """Generate both classic and enhanced interactive HTML reports."""
+    try:
+        position_data = analysis.get('position_data', {})
+        user_move_data = analysis.get('move_data', {})
+        
+        # Use both generators
+        if 'html_generator' not in st.session_state:
+            st.session_state.html_generator = ComprehensiveHTMLGenerator()
+        if 'interactive_html_generator' not in st.session_state:
+            st.session_state.interactive_html_generator = InteractiveHTMLGenerator()
+        
+        html_generator = st.session_state.html_generator
+        interactive_generator = st.session_state.interactive_html_generator
+        
+        with st.spinner("🎨 Generating both comprehensive analysis reports..."):
+            # Generate both reports
+            classic_path = html_generator.generate_epic_analysis_report(
+                position_data=position_data,
+                selected_move_data=user_move_data
+            )
+            
+            interactive_path = interactive_generator.generate_epic_analysis_report(
+                position_data=position_data,
+                selected_move_data=user_move_data
+            )
+        
+        if classic_path and interactive_path:
+            st.success(f"✅ Both comprehensive HTML reports generated!")
+            
+            # Offer downloads for both
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("#### 📄 Classic Report")
+                st.markdown("- Print-optimized layout\n- Comprehensive static analysis\n- Professional formatting")
+                
+                with open(classic_path, 'r', encoding='utf-8') as f:
+                    classic_content = f.read()
+                
+                st.download_button(
+                    label="📥 Download Classic Report",
+                    data=classic_content,
+                    file_name=f"classic_chess_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+            
+            with col2:
+                st.markdown("#### 🎮 Interactive Report")
+                st.markdown("- Working chess boards\n- Interactive visualizations\n- Enhanced user experience")
+                
+                with open(interactive_path, 'r', encoding='utf-8') as f:
+                    interactive_content = f.read()
+                
+                st.download_button(
+                    label="📥 Download Interactive Report",
+                    data=interactive_content,
+                    file_name=f"interactive_chess_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    use_container_width=True
+                )
+        
+    except Exception as e:
+        st.error(f"❌ Error generating both HTML reports: {e}")
+
+def display_html_features_comparison():
+    """Display comparison of HTML report features."""
+    st.markdown("### 📊 HTML Report Features Comparison")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### 📄 Classic HTML Report")
+        st.markdown("""
+        **Features:**
+        ✅ Print-optimized layout  
+        ✅ Comprehensive static analysis  
+        ✅ Professional formatting  
+        ✅ Side-by-side board comparison  
+        ✅ Detailed metrics tables  
+        ✅ Strategic insights  
+        ✅ Learning recommendations  
+        ✅ Spatial analysis visualization  
+        
+        **Best for:** Printing, studying, offline analysis
+        """)
+    
+    with col2:
+        st.markdown("#### 🎮 Enhanced Interactive HTML Report")
+        st.markdown("""
+        **Features:**
+        ✅ **Working chess boards with piece images**  
+        ✅ **Interactive board controls (flip, animate)**  
+        ✅ **Enhanced spatial analysis comparison**  
+        ✅ **Variation boards with move progression**  
+        ✅ **Clickable move analysis**  
+        ✅ **Modern color palette & animations**  
+        ✅ **Responsive mobile-friendly design**  
+        ✅ **Principal variation display fixed**  
+        
+        **Best for:** Interactive study, presentation, engagement
+        """)
+    
+    st.info("💡 **Recommendation:** Generate both reports for maximum flexibility - use interactive for study and classic for printing/sharing.")
+
 

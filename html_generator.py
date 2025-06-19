@@ -91,7 +91,8 @@ class ComprehensiveHTMLGenerator:
             include_detailed_stats=True,
             print_optimized=True
         )
-    
+
+
     def generate_comprehensive_strategic_analysis(self, position_data: Dict[str, Any], 
                                                 selected_move_data: Dict[str, Any] = None,
                                                 analysis_results: Dict[str, Any] = None,
@@ -118,67 +119,83 @@ class ComprehensiveHTMLGenerator:
         
         # Generate boards using existing methods
         current_board_svg = self.generate_chess_board_svg(fen, flipped=flipped)
-        result_board_svg = self.generate_result_board_svg(fen, best_move_uci, flipped)
         
-        # Generate all sections using new methods
+        # Calculate result position
+        result_fen = fen
+        if best_move_uci:
+            try:
+                result_board = chess.Board(fen)
+                move = chess.Move.from_uci(best_move_uci)
+                if move in result_board.legal_moves:
+                    result_board.push(move)
+                    result_fen = result_board.fen()
+            except:
+                pass
+        
+        result_board_svg = self.generate_chess_board_svg(result_fen, flipped)
+        
+        # Generate all sections using enhanced methods
         problem_section = self._generate_problem_section(current_board_svg, position_data)
         solution_section = self._generate_solution_section(current_board_svg, result_board_svg, best_move_notation, position_data)
         comparative_analysis = self._generate_comparative_analysis_section(position_data, best_move)
         top_moves_section = self._generate_top_moves_section(top_moves, turn, move_number)
-        variations_section = self._generate_principal_variations_section(position_data)
+        
+        # Enhanced variations with boards
+        variations_section = self._generate_enhanced_principal_variations_section(position_data, fen)
+        
         learning_insights_section = self._generate_comprehensive_learning_insights_section(position_data, selected_move_data)
         strategic_insights_section = self._generate_comprehensive_strategic_insights_section(position_data, selected_move_data)
         
-        # Optional spatial analysis
+        # Enhanced spatial analysis with comparison
         spatial_section = ""
         if include_spatial_analysis:
-            spatial_section = self._generate_spatial_analysis_section(fen)
+            spatial_section = self._generate_spatial_comparison_section(fen, result_fen, best_move)
         
         # Build complete HTML
         html_template = f"""
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chess Position Analysis - {position_data.get('title', f'Position {position_id}')}</title>
-    <style>
-        {self._generate_comprehensive_css(print_optimized)}
-    </style>
-</head>
-<body>
-    <div class="analysis-container">
-        <header class="report-header">
-            <h1>🏆 Comprehensive Chess Position Analysis</h1>
-            <div class="position-meta">
-                <span class="meta-item">Position #{position_id}</span>
-                <span class="meta-item">Move {move_number}</span>
-                <span class="meta-item">{turn.title()} to Move</span>
-                <span class="meta-item">{position_data.get('game_phase', 'Middlegame').title()}</span>
-                <span class="meta-item">Rating: {position_data.get('difficulty_rating', 1200)}</span>
-            </div>
-        </header>
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Chess Position Analysis - {position_data.get('title', f'Position {position_id}')}</title>
+        <style>
+            {self._generate_comprehensive_css(print_optimized)}
+        </style>
+    </head>
+    <body>
+        <div class="analysis-container">
+            <header class="report-header">
+                <h1>🏆 Comprehensive Chess Position Analysis</h1>
+                <div class="position-meta">
+                    <span class="meta-item">Position #{position_id}</span>
+                    <span class="meta-item">Move {move_number}</span>
+                    <span class="meta-item">{turn.title()} to Move</span>
+                    <span class="meta-item">{position_data.get('game_phase', 'Middlegame').title()}</span>
+                    <span class="meta-item">Rating: {position_data.get('difficulty_rating', 1200)}</span>
+                </div>
+            </header>
 
-        {problem_section}
-        {solution_section}
-        {spatial_section}
-        {strategic_insights_section}
-        {comparative_analysis}
-        {top_moves_section}
-        {variations_section}
-        {learning_insights_section}
+            {problem_section}
+            {solution_section}
+            {spatial_section}
+            {strategic_insights_section}
+            {comparative_analysis}
+            {top_moves_section}
+            {variations_section}
+            {learning_insights_section}
 
-        <footer class="report-footer">
-            <p>Generated by Kuikma Chess Engine • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
-            <p>Comprehensive analysis combining engine evaluation with strategic insights</p>
-        </footer>
-    </div>
-</body>
-</html>
-"""
+            <footer class="report-footer">
+                <p>Generated by Kuikma Chess Engine • {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p>Enhanced comprehensive analysis with spatial comparison and variation boards</p>
+            </footer>
+        </div>
+    </body>
+    </html>
+    """
         
         # Save and return path
-        filename = f"comprehensive_analysis_{position_id}_{int(datetime.now().timestamp())}.html"
+        filename = f"enhanced_comprehensive_analysis_{position_id}_{int(datetime.now().timestamp())}.html"
         output_path = os.path.join(self.output_dir, filename)
         
         with open(output_path, 'w', encoding='utf-8') as f:
@@ -979,79 +996,126 @@ class ComprehensiveHTMLGenerator:
 
             """
 
+    def _generate_spatial_analysis_section_best_move(self, fen: str, best_move_uci: str, flipped: bool = False) -> str:
+        """Generate spatial analysis section if available."""
+        try:
+            board = chess.Board(fen)
+            if best_move_uci:
+                try:
+                    move = chess.Move.from_uci(best_move_uci)
+                    if move in board.legal_moves:
+                        board.push(move)
+                except:
+                    pass
+        except:
+            return '<div style="border: 2px dashed #ddd; padding: 20px; text-align: center;">Result position unavailable</div>'
+
+        try:
+            return self.generate_spatial_analysis_html(board.fen())
+        except ImportError:
+            return """
+            <section class="section">
+                <div class="section-header">
+                    🗺️ Advanced Spatial Analysis - Best Move
+                </div>
+                <div style="text-align: center; color: #718096; font-style: italic; padding: 3rem; background: #f8f9fa; border-radius: 12px; border: 2px dashed #e2e8f0;">
+                    <h4 style="color: #4a5568; margin-bottom: 1rem;">Advanced Spatial Analysis Module</h4>
+                    <p style="font-size: 1.1rem; line-height: 1.6;">
+                        This feature provides detailed territory control visualization, piece activity mapping, 
+                        and strategic factor analysis. The spatial analysis module enhances positional understanding 
+                        through advanced computational geometry and chess-specific algorithms.
+                    </p>
+                    <p style="margin-top: 1rem; color: #4a5568;">
+                        <em>Module not currently available - contact administrator for advanced features.</em>
+                    </p>
+                </div>
+            </section>
+            <div class="page-break"></div>
+
+            """
+
+
     def generate_space_control_board_html(self, metrics: Dict[str, Any]) -> str:
-        """Generate space control board visualization as HTML."""
+        """Generate space control board visualization as HTML with wooden layout and control icons."""
         try:
             space_control = metrics.get('space_control', {})
             control_matrix = space_control.get('control_matrix', [])
-            
+
+            # Validate data
             if not control_matrix or len(control_matrix) != 8:
                 return '<p style="text-align: center; color: #718096;">Space control data not available</p>'
-            
-            # Create HTML table representation
-            board_html = '<table style="margin: 0 auto; border-collapse: collapse; border: 2px solid #e2e8f0;">'
-            
+
+            # Define classic wooden board colors
+            light_color = '#f0d9b5'
+            dark_color = '#b58863'
+
+            # Start responsive container
+            board_html = (
+                '<div style="overflow-x:auto; margin:0 auto; max-width:100%;">'
+                '<table style="border-collapse: collapse; border: 2px solid #e2e8f0; margin: 0 auto;">'
+            )
+
+            # Build board rows
             for rank in range(8):
                 board_html += '<tr>'
                 for file in range(8):
-                    control_value = control_matrix[7-rank][file]  # Flip rank for display
-                    
-                    # Determine background color and symbol
-                    if control_value == 1:  # White control
-                        bg_color = '#3b82f6'
-                        symbol = '🔵'
-                    elif control_value == -1:  # Black control
-                        bg_color = '#8b5cf6'
-                        symbol = '🟣'
-                    elif control_value == 2:  # Contested
-                        bg_color = '#f59e0b'
-                        symbol = '🟠'
-                    else:  # Neutral
-                        is_light = (rank + file) % 2 == 0
-                        bg_color = '#f0d9b5' if is_light else '#b58863'
-                        symbol = ''
-                    
-                    board_html += f'''
-                    <td style="
-                        width: 40px; 
-                        height: 40px; 
-                        background-color: {bg_color}; 
-                        text-align: center; 
-                        vertical-align: middle;
-                        border: 1px solid #d1d5db;
-                        font-size: 14px;
-                    ">{symbol}</td>
-                    '''
-                
+                    control_value = control_matrix[7 - rank][file]  # Flip for display order
+
+                    # Determine square color
+                    is_light = (rank + file) % 2 == 0
+                    bg_color = light_color if is_light else dark_color
+
+                    # Determine control icon
+                    if control_value == 1:
+                        symbol = '⚪'  # White control
+                    elif control_value == -1:
+                        symbol = '⚫'  # Black control
+                    elif control_value == 2:
+                        symbol = '🟠'  # Contested
+                    else:
+                        symbol = '🟢'  # Neutral
+
+                    board_html += (
+                        f'<td style="width:40px; height:40px; background-color:{bg_color}; '  
+                        'text-align:center; vertical-align:middle; border:1px solid #d1d5db; '  
+                        'font-size:16px; line-height:40px;">'
+                        f'{symbol}'
+                        '</td>'
+                    )
                 board_html += '</tr>'
-            
-            board_html += '</table>'
-            
-            # Add summary statistics
-            summary_html = f"""
-            <div style="margin-top: 20px; text-align: center;">
-                <div style="display: inline-grid; grid-template-columns: repeat(4, 1fr); gap: 20px; text-align: center;">
-                    <div>
-                        <div style="font-weight: 600; color: #3b82f6;">White Space</div>
-                        <div style="font-size: 1.2rem;">{space_control.get('white_space_percentage', 0):.1f}%</div>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600; color: #8b5cf6;">Black Space</div>
-                        <div style="font-size: 1.2rem;">{space_control.get('black_space_percentage', 0):.1f}%</div>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600; color: #f59e0b;">Contested</div>
-                        <div style="font-size: 1.2rem;">{space_control.get('contested_percentage', 0):.1f}%</div>
-                    </div>
-                    <div>
-                        <div style="font-weight: 600; color: #6b7280;">Advantage</div>
-                        <div style="font-size: 1.2rem;">{space_control.get('space_advantage', 0):+.0f}</div>
-                    </div>
-                </div>
+
+            board_html += '</table></div>'
+
+            # Legend for control icons
+            legend_html = (
+                '<div style="display:flex; justify-content:center; gap:20px; margin-top:12px; '  
+                'font-size:14px;">'
+                '<div><span style="font-size:18px;">⚪</span> White Control</div>'
+                '<div><span style="font-size:18px;">⚫</span> Black Control</div>'
+                '<div><span style="font-size:18px;">🟠</span> Contested</div>'
+                '<div><span style="font-size:18px;">🟢</span> Neutral</div>'
+                '</div>'
+            )
+
+            # Summary statistics
+            summary_html = f'''
+            <div style="margin-top:20px; text-align:center;">
+            <div style="display:inline-grid; grid-template-columns:repeat(5, auto); gap:20px; text-align:center;">
+                <div><div style="font-weight:600; color:#3b82f6;">White Space</div>
+                    <div style="font-size:1.2rem;">{space_control.get('white_space_percentage',0):.1f}%</div></div>
+                <div><div style="font-weight:600; color:#8b5cf6;">Black Space</div>
+                    <div style="font-size:1.2rem;">{space_control.get('black_space_percentage',0):.1f}%</div></div>
+                <div><div style="font-weight:600; color:#f59e0b;">Contested</div>
+                    <div style="font-size:1.2rem;">{space_control.get('contested_percentage',0):.1f}%</div></div>
+                <div><div style="font-weight:600; color:#6b7280;">Neutral</div>
+                    <div style="font-size:1.2rem;">{space_control.get('neutral_percentage',0):.1f}%</div></div>
+                <div><div style="font-weight:600; color:#10b981;">Advantage</div>
+                    <div style="font-size:1.2rem;">{space_control.get('space_advantage',0):+.1f}</div></div>
             </div>
-            """
-            
-            return board_html + summary_html
+            </div>
+            '''
+
+            return board_html + legend_html + summary_html
             
         except Exception as e:
             return f'<p style="text-align: center; color: #ef4444;">Error generating space control: {str(e)}</p>'
@@ -1136,8 +1200,315 @@ class ComprehensiveHTMLGenerator:
             return f'<p style="color: #e53e3e;">Error generating spatial metrics: {str(e)}</p>'
 
 
+    # Add this method to the ComprehensiveHTMLGenerator class
+    def _generate_spatial_analysis_section_enhanced(self, fen: str) -> str:
+        """Generate enhanced spatial analysis section with current and result position comparison."""
+        try:
+            return self.generate_spatial_analysis_html(fen)
+        except ImportError:
+            return """
+            <section class="section">
+                <div class="section-header">
+                    🗺️ Enhanced Spatial Analysis
+                </div>
+                <div style="text-align: center; color: #718096; font-style: italic; padding: 3rem; background: #f8f9fa; border-radius: 12px; border: 2px dashed #e2e8f0;">
+                    <h4 style="color: #4a5568; margin-bottom: 1rem;">Advanced Spatial Analysis Module</h4>
+                    <p style="font-size: 1.1rem; line-height: 1.6;">
+                        This feature provides detailed territory control visualization, piece activity mapping, 
+                        and strategic factor analysis. The spatial analysis module enhances positional understanding 
+                        through advanced computational geometry and chess-specific algorithms.
+                    </p>
+                    <p style="margin-top: 1rem; color: #4a5568;">
+                        <em>Module not currently available - contact administrator for advanced features.</em>
+                    </p>
+                </div>
+            </section>
+            <div class="page-break"></div>
+            """
+
+    def _generate_spatial_comparison_section(self, current_fen: str, result_fen: str, best_move: Dict[str, Any]) -> str:
+        """Generate spatial analysis comparison between current and result positions."""
+        try:
+            import spatial_analysis
+            
+            # Get spatial data for both positions
+            current_board = chess.Board(current_fen)
+            current_metrics = spatial_analysis.calculate_comprehensive_spatial_metrics(current_board)
+            current_spatial = current_metrics.get('space_control', {})
+            
+            result_spatial = current_spatial  # Default fallback
+            if result_fen and result_fen != current_fen:
+                try:
+                    result_board = chess.Board(result_fen)
+                    result_metrics = spatial_analysis.calculate_comprehensive_spatial_metrics(result_board)
+                    result_spatial = result_metrics.get('space_control', {})
+                except:
+                    pass
+            
+            # Generate comparison HTML
+            current_board_html = self.generate_space_control_board_html({'space_control': current_spatial})
+            result_board_html = self.generate_space_control_board_html({'space_control': result_spatial})
+            
+            return f"""
+            <section class="section">
+                <div class="section-header">
+                    🗺️ Spatial Analysis Comparison
+                </div>
+                <div class="section-content">
+                    <p>Advanced spatial analysis comparing territory control before and after the best move.</p>
+                    
+                    <div class="side-by-side">
+                        <div>
+                            <h3 style="margin-bottom: 20px; color: #4a5568; text-align: center;">🎯 Current Position</h3>
+                            {current_board_html}
+                        </div>
+                        <div>
+                            <h3 style="margin-bottom: 20px; color: #4a5568; text-align: center;">🌟 After Best Move: {self.convert_to_piece_icons(best_move.get('move', 'N/A'))}</h3>
+                            {result_board_html}
+                        </div>
+                    </div>
+                    
+                    <div style="margin-top: 30px;">
+                        <h3 style="margin-bottom: 20px; color: #4a5568;">📊 Spatial Metrics Comparison</h3>
+                        <table class="analysis-table">
+                            <thead>
+                                <tr>
+                                    <th>Metric</th>
+                                    <th>Current Position</th>
+                                    <th>After Best Move</th>
+                                    <th>Change</th>
+                                    <th>Impact</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>White Territory</strong></td>
+                                    <td>{current_spatial.get('white_space_percentage', 0):.1f}%</td>
+                                    <td>{result_spatial.get('white_space_percentage', 0):.1f}%</td>
+                                    <td class="{self.get_advantage_class(result_spatial.get('white_space_percentage', 0) - current_spatial.get('white_space_percentage', 0))}">{result_spatial.get('white_space_percentage', 0) - current_spatial.get('white_space_percentage', 0):+.1f}%</td>
+                                    <td>{'High' if abs(result_spatial.get('white_space_percentage', 0) - current_spatial.get('white_space_percentage', 0)) > 5 else 'Low'}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Black Territory</strong></td>
+                                    <td>{current_spatial.get('black_space_percentage', 0):.1f}%</td>
+                                    <td>{result_spatial.get('black_space_percentage', 0):.1f}%</td>
+                                    <td class="{self.get_advantage_class(current_spatial.get('black_space_percentage', 0) - result_spatial.get('black_space_percentage', 0))}">{result_spatial.get('black_space_percentage', 0) - current_spatial.get('black_space_percentage', 0):+.1f}%</td>
+                                    <td>{'High' if abs(result_spatial.get('black_space_percentage', 0) - current_spatial.get('black_space_percentage', 0)) > 5 else 'Low'}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Contested Squares</strong></td>
+                                    <td>{current_spatial.get('contested_percentage', 0):.1f}%</td>
+                                    <td>{result_spatial.get('contested_percentage', 0):.1f}%</td>
+                                    <td class="change-neutral">{result_spatial.get('contested_percentage', 0) - current_spatial.get('contested_percentage', 0):+.1f}%</td>
+                                    <td>Medium</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Space Advantage</strong></td>
+                                    <td>{current_spatial.get('space_advantage', 0):+.0f}</td>
+                                    <td>{result_spatial.get('space_advantage', 0):+.0f}</td>
+                                    <td class="{self.get_advantage_class(result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0))}">{result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0):+.0f}</td>
+                                    <td>{'Critical' if abs(result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0)) > 3 else 'Moderate'}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div style="background: #e6fffa; padding: 1.5rem; border-radius: 12px; margin-top: 2rem; border-left: 4px solid #38b2ac;">
+                        <h4 style="color: #234e52; margin-bottom: 1rem;">💡 Spatial Analysis Insights</h4>
+                        <p style="color: #234e52; line-height: 1.6;">
+                            The best move {'improves' if result_spatial.get('space_advantage', 0) > current_spatial.get('space_advantage', 0) else 'maintains' if result_spatial.get('space_advantage', 0) == current_spatial.get('space_advantage', 0) else 'reduces'} 
+                            White's space advantage by {abs(result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0)):.0f} squares. 
+                            Territory control shifts of more than 5% indicate significant positional changes.
+                        </p>
+                    </div>
+                </div>
+            </section>
+            <div class="page-break"></div>
+            """
+            
+        except ImportError:
+            return f"""
+            <section class="section">
+                <div class="section-header">
+                    🗺️ Spatial Analysis Comparison
+                </div>
+                <div style="text-align: center; color: #718096; font-style: italic; padding: 3rem; background: #f8f9fa; border-radius: 12px; border: 2px dashed #e2e8f0;">
+                    <h4 style="color: #4a5568; margin-bottom: 1rem;">Advanced Spatial Analysis Module</h4>
+                    <p style="font-size: 1.1rem; line-height: 1.6;">
+                        Enhanced spatial comparison between current position and position after best move: 
+                        {self.convert_to_piece_icons(best_move.get('move', 'N/A'))}
+                    </p>
+                    <p style="margin-top: 1rem; color: #4a5568;">
+                        <em>Module not currently available - contact administrator for advanced features.</em>
+                    </p>
+                </div>
+            </section>
+            <div class="page-break"></div>
+            """
+
+
+    def _generate_enhanced_principal_variations_section(self, position_data: Dict[str, Any], current_fen: str) -> str:
+        """Generate enhanced principal variations section with board positions."""
+        variation_analysis = position_data.get('variation_analysis', {})
+        variations = variation_analysis.get('variations', [])[:3]  # Top 3 variations
+        top_moves = position_data.get('top_moves', [])[:3]  # Fallback to top moves
+        
+        if not variations and not top_moves:
+            return ""
+        
+        # Use variations if available, otherwise use top_moves
+        moves_to_analyze = variations if variations else top_moves
+        
+        variations_html = ""
+        for i, variation in enumerate(moves_to_analyze):
+            if variations:
+                # Using variation_analysis data
+                initial_move = variation.get('initial_move', {})
+                final_eval = variation.get('final_evaluation', {})
+                comprehensive_stats = variation.get('comprehensive_final_stats', {})
+                
+                move_name = initial_move.get('move', f'Variation {i+1}')
+                score = initial_move.get('score', 0)
+                pv_notation = initial_move.get('pv', initial_move.get('principal_variation', move_name))
+                tactics = initial_move.get('tactics', [])
+                position_impact = initial_move.get('position_impact', {})
+            else:
+                # Using top_moves data
+                move_name = variation.get('move', f'Variation {i+1}')
+                score = variation.get('score', 0)
+                pv_notation = variation.get('pv', variation.get('principal_variation', move_name))
+                tactics = variation.get('tactics', [])
+                position_impact = variation.get('position_impact', {})
+                final_eval = {}
+                comprehensive_stats = {}
+            
+            score_display = self.format_score_display(score)
+            pv_notation_display = self.convert_to_piece_icons(pv_notation)
+            tactics_text = ", ".join([t.replace("_", " ").title() for t in tactics]) if tactics else "None identified"
+            
+            # Generate board after this variation
+            variation_fen = self._calculate_variation_position(current_fen, pv_notation)
+            variation_board_svg = self.generate_chess_board_svg(variation_fen, False, 350)
+            
+            variations_html += f"""
+            <div class="variation-card">
+                <div class="variation-header">
+                    Variation {i+1}: {self.convert_to_piece_icons(move_name)} ({score_display})
+                </div>
+                <div class="variation-content">
+                    <div class="side-by-side">
+                        <div>
+                            <div class="metrics-grid">
+                                <div class="metric-card">
+                                    <div class="metric-label">Engine Score</div>
+                                    <div class="metric-value {self.get_score_class(score)}">{score_display}</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-label">Classification</div>
+                                    <div class="metric-value">{variation.get('classification', 'Unknown')}</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-label">CP Loss</div>
+                                    <div class="metric-value">{variation.get('centipawn_loss', 0)}</div>
+                                </div>
+                                <div class="metric-card">
+                                    <div class="metric-label">Depth</div>
+                                    <div class="metric-value">{variation.get('depth', 0)}</div>
+                                </div>
+                            </div>
+                            
+                            <h4>Tactical Elements</h4>
+                            <p style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin: 1rem 0; border: 1px solid #e2e8f0;">{tactics_text}</p>
+                            
+                            <h4>Position Impact Analysis</h4>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin: 1rem 0;">
+                                <div style="background: #f0f8f0; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <strong>Material</strong><br>{position_impact.get('material_change', 0):+d}
+                                </div>
+                                <div style="background: #f8f0f8; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <strong>King Safety</strong><br>{position_impact.get('king_safety_impact', 0):+.1f}
+                                </div>
+                                <div style="background: #f0f0f8; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <strong>Center Control</strong><br>{position_impact.get('center_control_change', 0):+.1f}
+                                </div>
+                                <div style="background: #f8f8f0; padding: 1rem; border-radius: 8px; text-align: center;">
+                                    <strong>Initiative</strong><br>{position_impact.get('initiative_change', 0):+.1f}
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <h4>Position After Variation</h4>
+                            <div style="text-align: center; margin: 1rem 0;">
+                                {variation_board_svg}
+                            </div>
+                            <p style="text-align: center; font-size: 0.9rem; color: #666; margin-top: 0.5rem;">
+                                Board shows position after key moves from this variation
+                            </p>
+                        </div>
+                    </div>
+                    
+                    <h4>Principal Variation</h4>
+                    <div class="variation-moves">{pv_notation_display}</div>
+                    
+                    {f'<div style="background: #e3f2fd; padding: 1rem; border-radius: 8px; margin: 1rem 0; border: 1px solid #90caf9;"><strong>Strategic Assessment:</strong> {final_eval.get("final_assessment", "Detailed assessment not available for this variation.")}</div>' if final_eval.get('final_assessment') else ''}
+                </div>
+            </div>
+            """
+        
+        return f"""
+        <section class="section">
+            <div class="section-header">
+                🎯 Enhanced Principal Variations Analysis
+            </div>
+            <p>Detailed breakdown of the top variations with board positions and comprehensive evaluation.</p>
+            {variations_html}
+        </section>
+        <div class="page-break"></div>
+        """
 
     # === HELPER METHODS ===
+
+    def _calculate_variation_position(self, start_fen: str, pv_string: str) -> str:
+        """Calculate the position after playing moves from a principal variation."""
+        try:
+            board = chess.Board(start_fen)
+            
+            if not pv_string:
+                return start_fen
+            
+            # Clean and split the PV string
+            moves = pv_string.strip().split()
+            moves_played = 0
+            max_moves = 6  # Limit to prevent overly complex positions
+            
+            for move_str in moves:
+                if moves_played >= max_moves:
+                    break
+                    
+                # Clean move string (remove move numbers, annotations)
+                clean_move = move_str.replace('.', '').strip()
+                
+                # Skip empty strings and move numbers
+                if not clean_move or clean_move.isdigit():
+                    continue
+                
+                try:
+                    # Try to parse and make the move
+                    move = board.parse_san(clean_move)
+                    if move in board.legal_moves:
+                        board.push(move)
+                        moves_played += 1
+                    else:
+                        break
+                except (ValueError, chess.InvalidMoveError):
+                    # If move parsing fails, stop here
+                    break
+            
+            return board.fen()
+            
+        except Exception as e:
+            print(f"Error calculating variation position: {e}")
+            return start_fen
     
     def _extract_move_history(self, position_data: Dict[str, Any]) -> str:
         """Extract and format move history."""
