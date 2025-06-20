@@ -7,8 +7,6 @@ from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
 import chess
 import chess.svg
-
-# Import required modules
 import database
 import chess_board
 from interactive_html_generator import InteractiveHTMLGenerator

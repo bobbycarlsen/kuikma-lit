@@ -19,21 +19,6 @@ class ComprehensiveHTMLGenerator:
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-    # Enhanced methods for new functionality
-
-    def parse_json_field(self, json_data):
-        """Safely parse JSON field from database."""
-        if not json_data:
-            return {}
-        
-        if isinstance(json_data, str):
-            try:
-                return json.loads(json_data)
-            except:
-                return {}
-        
-        return json_data if isinstance(json_data, dict) else {}
-
     def generate_chess_board_svg(self, fen: str, flipped: bool = False, size: int = 400, highlight_squares: List[str] = None) -> str:
         """Generate SVG representation of chess board with optional square highlighting."""
         try:
@@ -538,7 +523,7 @@ class ComprehensiveHTMLGenerator:
     def _generate_enhanced_principal_variations_section(self, position_data: Dict[str, Any], current_fen: str) -> str:
         """Generate enhanced principal variations section with board positions for each variation."""
         variation_analysis = position_data.get('variation_analysis', {})
-        variations = variation_analysis.get('variations', [])[:3]  # Top 3 variations
+        variations = variation_analysis.get('variations', [])
         top_moves = position_data.get('top_moves', [])[:3]  # Fallback to top moves
         
         if not variations and not top_moves:
@@ -578,11 +563,7 @@ class ComprehensiveHTMLGenerator:
             if len(positions) > 1:
                 # Show all available positions of the variation
                 positions_to_show = positions[:max(20, len(positions))]
-                print(positions)
-                print(positions_to_show)
-                print(len(positions))
                 boards_count = len(positions_to_show)
-                print(boards_count)
                 boards_html = f"""
                 <h4>Variation Progression</h4>
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0;">
