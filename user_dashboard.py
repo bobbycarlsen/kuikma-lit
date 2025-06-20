@@ -15,7 +15,6 @@ from access_control import require_login, verification_context, resource_context
 from database import get_db_connection
 from config import config
 
-@require_login
 def display_user_dashboard():
     """Display comprehensive user dashboard."""
     st.markdown("# 👤 User Dashboard")

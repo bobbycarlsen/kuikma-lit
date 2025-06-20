@@ -247,6 +247,7 @@ def display_permission_help(permission: str):
         'admin_panel': "Admin panel access is restricted to administrators only.",
         'database_viewer': "Database viewer requires administrator privileges.",
         'user_management': "User management requires administrator privileges.",
+        'user_dashboard': "User management requires verification/admin user privileges.",
         'subscription_management': "Subscription management requires administrator privileges.",
     }
     
@@ -365,29 +366,3 @@ def get_current_user_info() -> dict:
     """Get current user info."""
     return st.session_state.get('user_info', {})
 
-# Example usage in a Streamlit component:
-"""
-# Simple permission check
-@require_permission('training')
-def display_training():
-    st.write("Training content here")
-
-# Resource consumption
-@require_resource('position', amount=1)
-def use_training_position():
-    # This will consume 1 position from user's limit
-    return "Training completed"
-
-# Conditional rendering
-with permission_context('analysis'):
-    if st.button("Run Analysis"):
-        # Analysis code here
-        pass
-else:
-    st.info("Analysis requires verification")
-
-# Admin-only function
-@admin_only
-def admin_settings():
-    st.write("Admin settings here")
-"""

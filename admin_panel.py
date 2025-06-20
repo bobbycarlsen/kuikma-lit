@@ -7,7 +7,8 @@ import json
 
 # Import enhanced modules
 from database import (get_db_connection, get_user_verification_stats, 
-                     get_subscription_usage_stats, log_admin_action)
+                     get_subscription_usage_stats, log_admin_action,
+                     database_sanity_check, optimize_database, )
 from auth import (verify_user, get_users_for_verification, update_user_subscription,
                  get_user_subscription, check_user_access)
 from config import config
@@ -28,12 +29,13 @@ def display_enhanced_admin_panel():
     st.markdown("---")
     
     # Admin navigation tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📋 User Verification", 
         "👥 User Management", 
         "💳 Subscription Management",
         "🔧 Feature Access Control",
-        "📊 Analytics & Reports"
+        "📊 Analytics & Reports",
+        "🛠️ Maintenance"
     ])
     
     with tab1:
@@ -50,6 +52,9 @@ def display_enhanced_admin_panel():
     
     with tab5:
         display_analytics_panel()
+
+    with tab6:
+        display_maintenance_panel()
 
 def display_user_verification_panel():
     """User verification management panel."""
@@ -714,6 +719,159 @@ def display_analytics_panel():
             st.info("No admin activity in selected period")
         
         conn.close()
+
+def display_maintenance_panel():
+    """Admin-only functionality panel."""
+    if st.session_state.get('user_id'):
+        # Check if user is admin
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT is_admin FROM users WHERE id = ?', (st.session_state['user_id'],))
+        result = cursor.fetchone()
+        conn.close()
+        
+        if result and result[0]:
+            st.markdown('<div class="admin-panel">', unsafe_allow_html=True)
+            st.markdown("### 🔐 Admin Panel")
+            
+            admin_tab1, admin_tab2, admin_tab3 = st.tabs(["👥 User Management", "📊 System Stats", "🔧 Maintenance"])
+            
+            with admin_tab1:
+                st.markdown("#### User Management")
+                
+                # Get all users
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                cursor.execute('SELECT id, email, created_at, last_login, is_admin FROM users ORDER BY created_at DESC')
+                users = cursor.fetchall()
+                conn.close()
+                
+                if users:
+                    users_df = pd.DataFrame(users, columns=['ID', 'Email', 'Created', 'Last Login', 'Admin'])
+                    st.dataframe(users_df, use_container_width=True)
+                    
+                    # User actions
+                    user_id_to_modify = st.selectbox("Select user to modify:", [u[0] for u in users], format_func=lambda x: f"ID {x}: {next(u[1] for u in users if u[0] == x)}")
+                    
+                    action_col1, action_col2 = st.columns(2)
+                    
+                    with action_col1:
+                        if st.button("🛡️ Toggle Admin Status"):
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            cursor.execute('UPDATE users SET is_admin = NOT is_admin WHERE id = ?', (user_id_to_modify,))
+                            conn.commit()
+                            conn.close()
+                            st.success("✅ Admin status updated!")
+                            st.rerun()
+                    
+                    with action_col2:
+                        if st.button("🗑️ Delete User", type="primary"):
+                            if st.session_state.get('confirm_user_delete'):
+                                conn = get_db_connection()
+                                cursor = conn.cursor()
+                                cursor.execute('DELETE FROM users WHERE id = ?', (user_id_to_modify,))
+                                conn.commit()
+                                conn.close()
+                                st.success("✅ User deleted!")
+                                st.session_state.confirm_user_delete = False
+                                st.rerun()
+                            else:
+                                st.session_state.confirm_user_delete = True
+                                st.warning("Click again to confirm deletion")
+                
+                else:
+                    st.info("No users found")
+            
+            with admin_tab2:
+                st.markdown("#### System Statistics")
+                
+                # Get comprehensive stats
+                sanity_result = database_sanity_check()
+                stats = sanity_result.get('stats', {})
+                
+                # Display stats in cards
+                stat_cols = st.columns(3)
+                
+                for i, (table, count) in enumerate(stats.items()):
+                    with stat_cols[i % 3]:
+                        st.metric(table.replace('_', ' ').title(), count)
+                
+                # Performance metrics
+                st.markdown("##### 📈 Performance Metrics")
+                
+                conn = get_db_connection()
+                cursor = conn.cursor()
+                
+                try:
+                    # Most active users
+                    cursor.execute('''
+                        SELECT u.email, COUNT(um.id) as move_count 
+                        FROM users u 
+                        LEFT JOIN user_moves um ON u.id = um.user_id 
+                        GROUP BY u.id 
+                        ORDER BY move_count DESC 
+                        LIMIT 5
+                    ''')
+                    active_users = cursor.fetchall()
+                    
+                    if active_users:
+                        st.markdown("**Most Active Users:**")
+                        for email, count in active_users:
+                            st.write(f"• {email}: {count} moves")
+                    
+                    # Training accuracy
+                    cursor.execute('''
+                        SELECT AVG(CASE WHEN result = 'correct' THEN 1.0 ELSE 0.0 END) * 100 as accuracy
+                        FROM user_moves
+                    ''')
+                    accuracy = cursor.fetchone()[0]
+                    
+                    if accuracy:
+                        st.metric("Overall Training Accuracy", f"{accuracy:.1f}%")
+                
+                except Exception as e:
+                    st.error(f"Error loading performance metrics: {e}")
+                finally:
+                    conn.close()
+            
+            with admin_tab3:
+                st.markdown("#### System Maintenance")
+                
+                # System actions
+                maint_col1, maint_col2 = st.columns(2)
+                
+                with maint_col1:
+                    if st.button("🧹 Clean Orphaned Records"):
+                        with st.spinner("Cleaning orphaned records..."):
+                            # Clean orphaned moves
+                            conn = get_db_connection()
+                            cursor = conn.cursor()
+                            cursor.execute('''
+                                DELETE FROM moves WHERE position_id NOT IN (SELECT id FROM positions)
+                            ''')
+                            orphaned_moves = cursor.rowcount
+                            
+                            # Clean orphaned user_moves
+                            cursor.execute('''
+                                DELETE FROM user_moves WHERE user_id NOT IN (SELECT id FROM users)
+                            ''')
+                            orphaned_user_moves = cursor.rowcount
+                            
+                            conn.commit()
+                            conn.close()
+                            
+                            st.success(f"✅ Cleaned {orphaned_moves} orphaned moves and {orphaned_user_moves} orphaned user moves")
+                
+                with maint_col2:
+                    if st.button("📊 Rebuild Indexes"):
+                        with st.spinner("Rebuilding database indexes..."):
+                            if optimize_database():
+                                st.success("✅ Indexes rebuilt successfully!")
+                            else:
+                                st.error("❌ Index rebuild failed")
+            
+            st.markdown('</div>', unsafe_allow_html=True)
 
 # Make function available for import
 __all__ = ['display_enhanced_admin_panel']

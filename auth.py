@@ -269,47 +269,6 @@ def delete_user_account(user_id: int, password: str) -> bool:
     finally:
         conn.close()
 
-def get_all_users(admin_user_id: int) -> list:
-    """
-    Get all users (admin only).
-    
-    Args:
-        admin_user_id: ID of admin user making the request
-        
-    Returns:
-        List of user dictionaries or empty list
-    """
-    if not is_admin_user(admin_user_id):
-        return []
-    
-    conn = database.get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        cursor.execute('''
-            SELECT id, email, created_at, last_login, is_admin
-            FROM users 
-            ORDER BY created_at DESC
-        ''')
-        
-        users = []
-        for row in cursor.fetchall():
-            users.append({
-                'id': row[0],
-                'email': row[1],
-                'created_at': row[2],
-                'last_login': row[3],
-                'is_admin': bool(row[4])
-            })
-        
-        return users
-        
-    except Exception as e:
-        print(f"Error getting all users: {e}")
-        return []
-    finally:
-        conn.close()
-
 def toggle_admin_status(admin_user_id: int, target_user_id: int) -> bool:
     """
     Toggle admin status of a user (admin only).

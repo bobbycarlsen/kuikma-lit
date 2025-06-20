@@ -135,19 +135,25 @@ def display_comprehensive_spatial_analysis(fen: str, position_data: Dict[str, An
         st.markdown("---")
         
         # Detailed visualizations
-        viz_tab1, viz_tab2, viz_tab3 = st.tabs([
-            "🗺️ Space Control Board", "📊 Detailed Metrics", "💡 Strategic Insights"
+        viz_tab1, viz_tab2, viz_tab3, viz_tab4, viz_tab5 = st.tabs([
+            "🚦Dashboard", "🗺️ Space Control Board", "🧩 Tactical Insights", 
+            "🏗️ Strategic Insights", "📍 Positional Analysis"
         ])
-        
         with viz_tab1:
-            display_enhanced_space_control_visualization(board, metrics)
-        
+            display_spatial_metrics_dashboard(metrics, position_data)
+
         with viz_tab2:
-            display_detailed_metrics_dashboard(metrics, position_data)
-        
+            display_enhanced_space_control_visualization(board, metrics)
+
         with viz_tab3:
+            display_tactical_analysis(board, metrics)
+        
+        with viz_tab4:
             display_strategic_insights_enhanced(board, metrics, position_data)
             
+        with viz_tab5:
+            display_positional_analysis(board, metrics)
+
     except Exception as e:
         st.error(f"Error in spatial analysis: {e}")
 
@@ -947,16 +953,6 @@ def display_positional_analysis(board: chess.Board, metrics: Dict[str, Any]):
     for info in castling_info:
         st.markdown(f"- {info}")
 
-def display_spatial_insights(board: chess.Board, metrics: Dict[str, Any], position_data: Dict[str, Any]):
-    """Display AI-generated spatial insights."""
-    st.markdown("#### 💡 Spatial Insights")
-    
-    insights = generate_spatial_insights(metrics, position_data)
-    
-    for insight_category, insight_list in insights.items():
-        with st.expander(f"🔍 {insight_category.replace('_', ' ').title()}"):
-            for insight in insight_list:
-                st.markdown(f"• {insight}")
 
 def generate_spatial_insights(metrics: Dict[str, Any], position_data: Dict[str, Any]) -> Dict[str, List[str]]:
     """Generate strategic insights based on spatial analysis."""
@@ -1195,42 +1191,6 @@ def display_enhanced_space_control_visualization(board: chess.Board, metrics: Di
             st.metric("Advantage", f"{advantage:+.0f}")
     else:
         st.warning("Space control visualization not available for this position.")
-
-def display_detailed_metrics_dashboard(metrics: Dict[str, Any], position_data: Dict[str, Any]):
-    """Display detailed metrics dashboard."""
-    st.markdown("#### 📊 Comprehensive Metrics")
-    
-    # Material metrics
-    material = metrics.get('material_balance', {})
-    if material:
-        st.markdown("**Material Balance:**")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            white_material = material.get('white_total', 0)
-            st.metric("White Material", white_material)
-        
-        with col2:
-            black_material = material.get('black_total', 0)
-            st.metric("Black Material", black_material)
-        
-        with col3:
-            material_diff = material.get('material_difference', 0)
-            st.metric("Material Difference", f"{material_diff:+.1f}")
-    
-    # Center control metrics
-    center = metrics.get('center_control', {})
-    if center:
-        st.markdown("**Center Control:**")
-        center_col1, center_col2 = st.columns(2)
-        
-        with center_col1:
-            center_adv = center.get('center_advantage', 0)
-            st.metric("Center Advantage", f"{center_adv:+}")
-        
-        with center_col2:
-            extended_adv = center.get('extended_advantage', 0)
-            st.metric("Extended Center", f"{extended_adv:+}")
 
 def display_strategic_insights_enhanced(board: chess.Board, metrics: Dict[str, Any], position_data: Dict[str, Any]):
     """Display enhanced strategic insights."""

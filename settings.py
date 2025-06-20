@@ -4,7 +4,7 @@ import pandas as pd
 import json
 import os
 import shutil
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, List, Optional
 import plotly.express as px
 import plotly.graph_objects as go
@@ -16,22 +16,11 @@ import pgn_loader
 from jsonl_processor import JSONLProcessor
 from html_generator import ComprehensiveHTMLGenerator
 from pathlib import Path
+# missing_functions.py - Add these functions to your settings.py or create a separate utils.py file
 
+import sqlite3
+from database import get_db_connection
 
-def display_import_interface():
-    """Display comprehensive data import interface."""
-    st.markdown("### 📥 Import Training Data")
-    
-    import_tabs = st.tabs(["🧩 Enhanced JSONL", "♟️ PGN Games", "📋 Batch Import"])
-    
-    with import_tabs[0]:
-        display_jsonl_import()
-    
-    with import_tabs[1]:
-        display_pgn_import()
-    
-    with import_tabs[2]:
-        display_batch_import()
 
 def display_jsonl_import():
     """Display enhanced JSONL import interface."""
@@ -522,21 +511,6 @@ def perform_batch_import(files: List, import_order: str, stop_on_error: bool):
             results_df = pd.DataFrame(import_results)
             st.dataframe(results_df, use_container_width=True)
 
-def display_export_backup_interface():
-    """Display export and backup interface."""
-    st.markdown("### 💾 Export & Backup")
-    
-    export_tabs = st.tabs(["📤 Database Export", "💾 Backup Management", "📊 Data Export"])
-    
-    with export_tabs[0]:
-        display_database_export()
-    
-    with export_tabs[1]:
-        display_backup_management()
-    
-    with export_tabs[2]:
-        display_data_export()
-
 def display_database_export():
     """Display database export interface."""
     st.markdown("#### 📤 Complete Database Export")
@@ -643,7 +617,6 @@ def perform_database_export(export_format: str, include_user_data: bool, include
                 
         except Exception as e:
             st.error(f"❌ Export failed: {e}")
-
 
 def display_backup_management():
     """Display backup management interface."""
@@ -1565,146 +1538,6 @@ def display_user_configuration():
             else:
                 st.error("❌ Failed to save settings")
 
-def display_data_overview():
-    """Display comprehensive data overview."""
-    st.markdown("### 📊 Data Overview")
-    
-    # Get comprehensive statistics
-    stats = get_comprehensive_statistics()
-    
-    # Overview metrics
-    st.markdown("#### 📈 Database Overview")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        st.metric("Total Positions", stats['positions']['total'])
-    
-    with col2:
-        st.metric("Total Games", stats['games']['total'])
-    
-    with col3:
-        st.metric("Active Users", stats['users']['active'])
-    
-    with col4:
-        st.metric("Training Sessions", stats['sessions']['total'])
-    
-    # Data quality metrics
-    st.markdown("#### ✨ Data Quality")
-    
-    quality_col1, quality_col2 = st.columns(2)
-    
-    with quality_col1:
-        # Position quality distribution
-        if stats['positions']['quality_distribution']:
-            quality_df = pd.DataFrame(
-                list(stats['positions']['quality_distribution'].items()),
-                columns=['Quality Level', 'Count']
-            )
-            fig = px.pie(
-                quality_df, 
-                values='Count', 
-                names='Quality Level',
-                title="Position Data Quality"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    with quality_col2:
-        # Game import sources
-        if stats['games']['sources']:
-            sources_df = pd.DataFrame(
-                list(stats['games']['sources'].items()),
-                columns=['Source', 'Count']
-            )
-            fig = px.bar(
-                sources_df,
-                x='Source',
-                y='Count',
-                title="Game Import Sources"
-            )
-            st.plotly_chart(fig, use_container_width=True)
-    
-    # Training activity
-    st.markdown("#### 🎯 Training Activity")
-    
-    activity_data = stats.get('training_activity', {})
-    if activity_data:
-        activity_df = pd.DataFrame(activity_data)
-        
-        fig = px.line(
-            activity_df,
-            x='date',
-            y='moves',
-            title="Daily Training Activity (Last 30 Days)"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-
-def display_analysis_templates():
-    """Display analysis template management."""
-    st.markdown("### 📚 Analysis Templates")
-    
-    st.info("Manage comprehensive HTML analysis templates generated during training.")
-    
-    # Template statistics
-    template_stats = get_template_statistics()
-    
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        st.metric("Templates Generated", template_stats.get('total', 0))
-    
-    with col2:
-        st.metric("Total Size", f"{template_stats.get('total_size_mb', 0):.2f} MB")
-    
-    with col3:
-        st.metric("Average Size", f"{template_stats.get('avg_size_kb', 0):.1f} KB")
-    
-    # Template management
-    st.markdown("#### 🛠️ Template Management")
-    
-    template_col1, template_col2 = st.columns(2)
-    
-    with template_col1:
-        if st.button("📁 Open Templates Folder", use_container_width=True):
-            template_dir = "kuikma_analysis"
-            if os.path.exists(template_dir):
-                st.success(f"Templates folder: {os.path.abspath(template_dir)}")
-            else:
-                st.warning("Templates folder not found. Generate some analyses first.")
-    
-    with template_col2:
-        if st.button("🗑️ Clear All Templates", use_container_width=True):
-            if st.session_state.get('confirm_template_clear'):
-                clear_analysis_templates()
-                st.session_state.confirm_template_clear = False
-                st.success("✅ All templates cleared!")
-                st.rerun()
-            else:
-                st.session_state.confirm_template_clear = True
-                st.warning("⚠️ Click again to confirm deletion of all templates")
-    
-    # Recent templates
-    recent_templates = get_recent_templates()
-    if recent_templates:
-        st.markdown("#### 📄 Recent Templates")
-        
-        templates_df = pd.DataFrame(recent_templates)
-        st.dataframe(templates_df, use_container_width=True)
-
-def display_advanced_tools():
-    """Display advanced tools and utilities."""
-    st.markdown("### 🛠️ Advanced Tools")
-    
-    tools_tabs = st.tabs(["🔧 Database Tools", "📊 Analytics", "🧪 Experimental"])
-    
-    with tools_tabs[0]:
-        display_database_tools()
-    
-    with tools_tabs[1]:
-        display_analytics_tools()
-    
-    with tools_tabs[2]:
-        display_experimental_tools()
 
 def display_database_tools():
     """Display database maintenance tools."""
@@ -1806,73 +1639,6 @@ def get_position_quality_stats() -> Dict[str, int]:
     except Exception:
         return {}
 
-def get_comprehensive_statistics() -> Dict[str, Any]:
-    """Get comprehensive application statistics."""
-    # This would be a comprehensive stats gathering function
-    # For now, return basic structure
-    return {
-        'positions': {
-            'total': 0,
-            'quality_distribution': {}
-        },
-        'games': {
-            'total': 0,
-            'sources': {}
-        },
-        'users': {
-            'active': 0
-        },
-        'sessions': {
-            'total': 0
-        },
-        'training_activity': []
-    }
-
-def get_template_statistics() -> Dict[str, Any]:
-    """Get analysis template statistics."""
-    template_dir = "kuikma_analysis"
-    
-    if not os.path.exists(template_dir):
-        return {'total': 0, 'total_size_mb': 0, 'avg_size_kb': 0}
-    
-    files = [f for f in os.listdir(template_dir) if f.endswith('.html')]
-    total_size = sum(os.path.getsize(os.path.join(template_dir, f)) for f in files)
-    
-    return {
-        'total': len(files),
-        'total_size_mb': total_size / (1024 * 1024),
-        'avg_size_kb': (total_size / len(files) / 1024) if files else 0
-    }
-
-def get_recent_templates() -> List[Dict[str, Any]]:
-    """Get list of recent analysis templates."""
-    template_dir = "kuikma_analysis"
-    
-    if not os.path.exists(template_dir):
-        return []
-    
-    files = []
-    for filename in os.listdir(template_dir):
-        if filename.endswith('.html'):
-            filepath = os.path.join(template_dir, filename)
-            stat = os.stat(filepath)
-            files.append({
-                'Filename': filename,
-                'Size (KB)': round(stat.st_size / 1024, 2),
-                'Created': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M')
-            })
-    
-    # Sort by creation time, most recent first
-    files.sort(key=lambda x: x['Created'], reverse=True)
-    return files[:10]  # Return last 10
-
-def clear_analysis_templates():
-    """Clear all analysis templates."""
-    template_dir = "kuikma_analysis"
-    
-    if os.path.exists(template_dir):
-        shutil.rmtree(template_dir)
-        os.makedirs(template_dir)
 
 def export_database_to_json(include_user_data: bool, include_games: bool) -> Dict[str, Any]:
     """Export database to JSON format."""
@@ -1899,16 +1665,6 @@ def display_imported_games_analysis(filename: str):
     st.markdown(f"#### 📊 Analysis of imported games from {filename}")
     # Implementation would show statistics about the imported games
 
-
-# missing_functions.py - Add these functions to your settings.py or create a separate utils.py file
-
-import sqlite3
-import json
-import pandas as pd
-from datetime import datetime, timedelta
-from pathlib import Path
-import streamlit as st
-from database import get_db_connection
 
 def get_all_users_for_export():
     """Get all users for export selection."""

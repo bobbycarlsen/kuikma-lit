@@ -1101,58 +1101,6 @@ def display_html_generation_section(analysis: Dict[str, Any]):
     display_html_generation_options(analysis)
 
 
-
-def generate_comprehensive_html_report(analysis: Dict[str, Any]):
-    '''Generate comprehensive HTML report with enhanced features.'''
-    try:
-        position_data = analysis.get('position_data', {})
-        user_move_data = analysis.get('move_data', {})
-        
-        # Use enhanced HTML generator
-        if 'html_generator' not in st.session_state:
-            st.session_state.html_generator = ComprehensiveHTMLGenerator()
-        
-        html_generator = st.session_state.html_generator
-        
-        with st.spinner("🎨 Generating epic chess analysis report..."):
-            # Generate with enhanced features - this is the key change
-            output_path = html_generator.generate_epic_analysis_report(
-                position_data=position_data,
-                selected_move_data=user_move_data
-            )
-        
-        if output_path:
-            st.success(f"✅ Epic comprehensive HTML report generated!")
-            
-            # Update analysis with new path
-            analysis['generated_html'] = True
-            analysis['html_path'] = output_path
-            st.session_state.last_move_analysis = analysis
-            
-            # Offer download
-            try:
-                with open(output_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-                
-                st.download_button(
-                    label="📥 Download Epic Analysis Report",
-                    data=html_content,
-                    file_name=f"epic_chess_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
-            except Exception as e:
-                st.warning(f"Download not available: {e}")
-            
-            st.rerun()
-        else:
-            st.error("❌ Failed to generate HTML report")
-    
-    except Exception as e:
-        st.error(f"❌ Error generating HTML report: {e}")
-        import traceback
-        st.error(traceback.format_exc())
-
 def display_continue_training_section():
     """Display continue training section."""
     st.markdown("### ➡️ Continue Training")
@@ -1841,10 +1789,6 @@ def convert_to_piece_icons(move_string: str) -> str:
     
     return result
 
-# Keep original submit_move function for backward compatibility
-def submit_move(selected_move_data: Dict[str, Any], generate_html: bool = False):
-    """Original submit move function for backward compatibility."""
-    submit_legal_move(selected_move_data, generate_html)
 
 # Add this function to training.py
 def display_html_generation_options(analysis: Dict[str, Any]):
@@ -1901,55 +1845,6 @@ def generate_classic_html_report(analysis: Dict[str, Any]):
     except Exception as e:
         st.error(f"❌ Error generating classic HTML: {e}")
 
-
-def generate_interactive_html_report(analysis: Dict[str, Any]):
-    '''Generate interactive HTML report with enhanced features.'''
-    try:
-        position_data = analysis.get('position_data', {})
-        user_move_data = analysis.get('move_data', {})
-        
-        # Use interactive HTML generator
-        if 'interactive_html_generator' not in st.session_state:
-            st.session_state.interactive_html_generator = InteractiveHTMLGenerator()
-        
-        interactive_generator = st.session_state.interactive_html_generator
-        
-        with st.spinner("🎮 Generating interactive chess analysis report..."):
-            output_path = interactive_generator.generate_epic_analysis_report(
-                position_data=position_data,
-                selected_move_data=user_move_data
-            )
-        
-        if output_path:
-            st.success(f"✅ Interactive comprehensive HTML report generated!")
-            
-            # Update analysis with new path
-            analysis['generated_interactive_html'] = True
-            analysis['interactive_html_path'] = output_path
-            st.session_state.last_move_analysis = analysis
-            
-            # Offer download
-            try:
-                with open(output_path, 'r', encoding='utf-8') as f:
-                    html_content = f.read()
-                
-                st.download_button(
-                    label="📥 Download Interactive Report",
-                    data=html_content,
-                    file_name=f"interactive_chess_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
-                    mime="text/html",
-                    use_container_width=True
-                )
-            except Exception as e:
-                st.warning(f"Download not available: {e}")
-            
-        else:
-            st.error("❌ Failed to generate interactive HTML report")
-    
-    except Exception as e:
-        st.error(f"❌ Error generating interactive HTML report: {e}")
-        import traceback
-        st.error(traceback.format_exc())
 
 
 def submit_move_with_interactive_html_generation():

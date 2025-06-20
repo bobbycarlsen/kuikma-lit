@@ -28,6 +28,7 @@ from database import upgrade_existing_database, create_enhanced_tables
 from auth import (authenticate_user, register_user, ensure_admin_user, check_user_access,
                  get_user_subscription, can_use_resource)
 from admin_panel import display_enhanced_admin_panel
+from user_dashboard import display_user_dashboard
 
 # Import existing modules (assuming they exist)
 try:
@@ -436,158 +437,6 @@ def display_database_viewer():
     
     st.markdown('</div>', unsafe_allow_html=True)
 
-def display_admin_panel():
-    """Admin-only functionality panel."""
-    if st.session_state.get('user_id'):
-        # Check if user is admin
-        conn = database.get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT is_admin FROM users WHERE id = ?', (st.session_state['user_id'],))
-        result = cursor.fetchone()
-        conn.close()
-        
-        if result and result[0]:
-            st.markdown('<div class="admin-panel">', unsafe_allow_html=True)
-            st.markdown("### 🔐 Admin Panel")
-            
-            admin_tab1, admin_tab2, admin_tab3 = st.tabs(["👥 User Management", "📊 System Stats", "🔧 Maintenance"])
-            
-            with admin_tab1:
-                st.markdown("#### User Management")
-                
-                # Get all users
-                conn = database.get_db_connection()
-                cursor = conn.cursor()
-                cursor.execute('SELECT id, email, created_at, last_login, is_admin FROM users ORDER BY created_at DESC')
-                users = cursor.fetchall()
-                conn.close()
-                
-                if users:
-                    users_df = pd.DataFrame(users, columns=['ID', 'Email', 'Created', 'Last Login', 'Admin'])
-                    st.dataframe(users_df, use_container_width=True)
-                    
-                    # User actions
-                    user_id_to_modify = st.selectbox("Select user to modify:", [u[0] for u in users], format_func=lambda x: f"ID {x}: {next(u[1] for u in users if u[0] == x)}")
-                    
-                    action_col1, action_col2 = st.columns(2)
-                    
-                    with action_col1:
-                        if st.button("🛡️ Toggle Admin Status"):
-                            conn = database.get_db_connection()
-                            cursor = conn.cursor()
-                            cursor.execute('UPDATE users SET is_admin = NOT is_admin WHERE id = ?', (user_id_to_modify,))
-                            conn.commit()
-                            conn.close()
-                            st.success("✅ Admin status updated!")
-                            st.rerun()
-                    
-                    with action_col2:
-                        if st.button("🗑️ Delete User", type="primary"):
-                            if st.session_state.get('confirm_user_delete'):
-                                conn = database.get_db_connection()
-                                cursor = conn.cursor()
-                                cursor.execute('DELETE FROM users WHERE id = ?', (user_id_to_modify,))
-                                conn.commit()
-                                conn.close()
-                                st.success("✅ User deleted!")
-                                st.session_state.confirm_user_delete = False
-                                st.rerun()
-                            else:
-                                st.session_state.confirm_user_delete = True
-                                st.warning("Click again to confirm deletion")
-                
-                else:
-                    st.info("No users found")
-            
-            with admin_tab2:
-                st.markdown("#### System Statistics")
-                
-                # Get comprehensive stats
-                sanity_result = database.database_sanity_check()
-                stats = sanity_result.get('stats', {})
-                
-                # Display stats in cards
-                stat_cols = st.columns(3)
-                
-                for i, (table, count) in enumerate(stats.items()):
-                    with stat_cols[i % 3]:
-                        st.metric(table.replace('_', ' ').title(), count)
-                
-                # Performance metrics
-                st.markdown("##### 📈 Performance Metrics")
-                
-                conn = database.get_db_connection()
-                cursor = conn.cursor()
-                
-                try:
-                    # Most active users
-                    cursor.execute('''
-                        SELECT u.email, COUNT(um.id) as move_count 
-                        FROM users u 
-                        LEFT JOIN user_moves um ON u.id = um.user_id 
-                        GROUP BY u.id 
-                        ORDER BY move_count DESC 
-                        LIMIT 5
-                    ''')
-                    active_users = cursor.fetchall()
-                    
-                    if active_users:
-                        st.markdown("**Most Active Users:**")
-                        for email, count in active_users:
-                            st.write(f"• {email}: {count} moves")
-                    
-                    # Training accuracy
-                    cursor.execute('''
-                        SELECT AVG(CASE WHEN result = 'correct' THEN 1.0 ELSE 0.0 END) * 100 as accuracy
-                        FROM user_moves
-                    ''')
-                    accuracy = cursor.fetchone()[0]
-                    
-                    if accuracy:
-                        st.metric("Overall Training Accuracy", f"{accuracy:.1f}%")
-                
-                except Exception as e:
-                    st.error(f"Error loading performance metrics: {e}")
-                finally:
-                    conn.close()
-            
-            with admin_tab3:
-                st.markdown("#### System Maintenance")
-                
-                # System actions
-                maint_col1, maint_col2 = st.columns(2)
-                
-                with maint_col1:
-                    if st.button("🧹 Clean Orphaned Records"):
-                        with st.spinner("Cleaning orphaned records..."):
-                            # Clean orphaned moves
-                            conn = database.get_db_connection()
-                            cursor = conn.cursor()
-                            cursor.execute('''
-                                DELETE FROM moves WHERE position_id NOT IN (SELECT id FROM positions)
-                            ''')
-                            orphaned_moves = cursor.rowcount
-                            
-                            # Clean orphaned user_moves
-                            cursor.execute('''
-                                DELETE FROM user_moves WHERE user_id NOT IN (SELECT id FROM users)
-                            ''')
-                            orphaned_user_moves = cursor.rowcount
-                            
-                            conn.commit()
-                            conn.close()
-                            
-                            st.success(f"✅ Cleaned {orphaned_moves} orphaned moves and {orphaned_user_moves} orphaned user moves")
-                
-                with maint_col2:
-                    if st.button("📊 Rebuild Indexes"):
-                        with st.spinner("Rebuilding database indexes..."):
-                            if database.optimize_database():
-                                st.success("✅ Indexes rebuilt successfully!")
-                            else:
-                                st.error("❌ Index rebuild failed")
-            
-            st.markdown('</div>', unsafe_allow_html=True)
 
 def display_game_analysis():
     """Game analysis interface with enhanced functionality."""
@@ -894,6 +743,7 @@ def display_navigation_menu():
         ("🎮 Game Analysis", "game_analysis"),
         ("🔍 Spatial Analysis", "spatial_analysis"),
         ("⚙️ Settings", "view_profile"),
+        ("🚶 User Dashboard", "user_dashboard"),
     ]
     
     # Admin menu items
@@ -954,6 +804,7 @@ def display_main_content():
         "🎮 Game Analysis": "game_analysis",
         "🔍 Spatial Analysis": "spatial_analysis",
         "⚙️ Settings": "view_profile",
+        "🚶 User Dashboard": "user_dashboard",
         "🗄️ Database Viewer": "database_viewer",
         "👑 Admin Panel": "admin_panel",
     }
@@ -996,6 +847,9 @@ def display_main_content():
         elif selected_page == "⚙️ Settings":
             settings.display_user_configuration()
             display_enhanced_settings()
+
+        elif selected_page == "🚶 User Dashboard":
+            display_user_dashboard()
         
         elif selected_page == "🗄️ Database Viewer":
             display_database_viewer()

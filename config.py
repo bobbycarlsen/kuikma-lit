@@ -65,6 +65,7 @@ class Config:
                 'save_positions': True,
                 'export_data': True,
                 'view_history': True,
+                'user_dashboard': True
             },
             'admin': {
                 'user_management': True,
@@ -75,6 +76,7 @@ class Config:
                 'subscription_management': True,
                 'backup_restore': True,
                 'system_settings': True,
+                'user_dashboard': True
             }
         }
     
