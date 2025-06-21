@@ -1,4 +1,4 @@
-# chess_engine/database.py - Enhanced Database for Kuikma Chess Engine
+# database.py - Enhanced Database for Kuikma Chess Engine
 import sqlite3
 import json
 import hashlib
@@ -317,131 +317,6 @@ def init_db():
     
     conn.commit()
     conn.close()
-
-def load_positions_from_enhanced_jsonl(jsonl_processor, jsonl_content: str) -> Dict[str, Any]:
-    """
-    Load positions from enhanced JSONL content using the new processor.
-    
-    Args:
-        jsonl_processor: Instance of enhanced JSONLProcessor
-        jsonl_content: String content of JSONL file
-        
-    Returns:
-        Dictionary with loading results
-    """
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        # Process JSONL content using enhanced processor
-        positions = jsonl_processor.process_jsonl_content(jsonl_content)
-        
-        positions_loaded = 0
-        errors_encountered = 0
-        
-        for position_data in positions:
-            try:
-                # Insert position with all enhanced fields
-                cursor.execute('''
-                    INSERT OR REPLACE INTO positions (
-                        id, fen, turn, fullmove_number, halfmove_clock, castling_rights, en_passant,
-                        move_history, last_move, engine_depth, analysis_time,
-                        material_analysis, mobility_analysis, king_safety_analysis, center_control_analysis,
-                        pawn_structure_analysis, piece_development_analysis, comprehensive_analysis,
-                        variation_analysis, learning_insights, visualization_data, position_classification,
-                        game_phase, difficulty_rating, themes, position_type, source_type, title,
-                        description, solution_moves, timestamp, processed_timestamp, processing_quality
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ''', (
-                    position_data.get('id'),
-                    position_data['fen'],
-                    position_data['turn'],
-                    position_data['fullmove_number'],
-                    position_data.get('halfmove_clock', 0),
-                    position_data.get('castling_rights'),
-                    position_data.get('en_passant'),
-                    json.dumps(position_data.get('move_history', {})),
-                    json.dumps(position_data.get('last_move', {})),
-                    position_data.get('engine_depth'),
-                    position_data.get('analysis_time'),
-                    json.dumps(position_data.get('material_analysis', {})),
-                    json.dumps(position_data.get('mobility_analysis', {})),
-                    json.dumps(position_data.get('king_safety_analysis', {})),
-                    json.dumps(position_data.get('center_control_analysis', {})),
-                    json.dumps(position_data.get('pawn_structure_analysis', {})),
-                    json.dumps(position_data.get('piece_development_analysis', {})),
-                    json.dumps(position_data.get('comprehensive_analysis', {})),
-                    json.dumps(position_data.get('variation_analysis', {})),
-                    json.dumps(position_data.get('learning_insights', {})),
-                    json.dumps(position_data.get('visualization_data', {})),
-                    json.dumps(position_data.get('position_classification', [])),
-                    position_data['game_phase'],
-                    position_data['difficulty_rating'],
-                    json.dumps(position_data.get('themes', [])),
-                    position_data.get('position_type', 'tactical'),
-                    position_data.get('source_type', 'upload'),
-                    position_data.get('title', ''),
-                    position_data.get('description', ''),
-                    json.dumps(position_data.get('solution_moves', [])),
-                    position_data.get('timestamp'),
-                    position_data.get('processed_timestamp'),
-                    position_data.get('processing_quality', 'standard')
-                ))
-                
-                position_id = position_data.get('id') or cursor.lastrowid
-                
-                # Insert enhanced top moves
-                for move_data in position_data.get('top_moves', []):
-                    cursor.execute('''
-                        INSERT OR REPLACE INTO moves (
-                            position_id, move, uci, score, depth, centipawn_loss, classification,
-                            principal_variation, tactics, position_impact, ml_evaluation,
-                            move_complexity, strategic_value, rank
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        position_id,
-                        move_data.get('move'),
-                        move_data.get('uci', ''),
-                        move_data.get('score', 0),
-                        move_data.get('depth', 0),
-                        move_data.get('centipawn_loss', 0),
-                        move_data.get('classification', 'unknown'),
-                        move_data.get('pv', ''),
-                        json.dumps(move_data.get('tactics', [])),
-                        json.dumps(move_data.get('position_impact', {})),
-                        json.dumps(move_data.get('ml_evaluation', {})),
-                        round(move_data.get('move_complexity', 0.0), 3),
-                        round(move_data.get('strategic_value', 0.0), 3),
-                        move_data.get('rank', 1)
-                    ))
-                
-                positions_loaded += 1
-                
-            except Exception as e:
-                errors_encountered += 1
-                print(f"Error loading position: {e}")
-                continue
-        
-        conn.commit()
-        
-        # Get processor statistics
-        stats = jsonl_processor.get_processing_stats()
-        
-        return {
-            'success': True,
-            'positions_loaded': positions_loaded,
-            'errors_encountered': errors_encountered,
-            'processor_stats': stats
-        }
-        
-    except Exception as e:
-        return {
-            'success': False,
-            'error': str(e),
-            'positions_loaded': 0
-        }
-    finally:
-        conn.close()
 
 def store_pgn_games(games_data, pgn_source="uploaded"):
     """
@@ -810,8 +685,375 @@ def get_db_connection():
 
     return conn
 
+
+
+def create_user_subscription(user_id: int, admin_user_id: Optional[int] = None) -> bool:
+    """Create default subscription for a user."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check if subscription already exists
+        cursor.execute('SELECT id FROM user_subscriptions WHERE user_id = ?', (user_id,))
+        if cursor.fetchone():
+            return True  # Already exists
+        
+        # Create default subscription
+        reset_date = (datetime.now() + timedelta(days=30)).date()
+        
+        cursor.execute('''
+            INSERT INTO user_subscriptions (
+                user_id, subscription_type, position_limit, analysis_limit, 
+                game_upload_limit, reset_date, updated_by
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            user_id, 'basic',
+            config.DEFAULT_POSITION_LIMIT,
+            config.DEFAULT_ANALYSIS_LIMIT,
+            config.DEFAULT_GAME_UPLOAD_LIMIT,
+            reset_date,
+            admin_user_id
+        ))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error creating user subscription: {e}")
+        return False
+    finally:
+        conn.close()
+
+def log_admin_action(admin_user_id: int, action: str, target_user_id: Optional[int] = None, 
+                    target_resource: Optional[str] = None, action_data: Optional[Dict] = None) -> bool:
+    """Log admin action for audit trail."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cursor.execute('''
+            INSERT INTO admin_audit_log (
+                admin_user_id, action, target_user_id, target_resource, action_data
+            ) VALUES (?, ?, ?, ?, ?)
+        ''', (
+            admin_user_id, action, target_user_id, target_resource,
+            json.dumps(action_data) if action_data else None
+        ))
+        
+        conn.commit()
+        return True
+        
+    except Exception as e:
+        print(f"Error logging admin action: {e}")
+        return False
+    finally:
+        conn.close()
+
+
+def load_positions_from_enhanced_jsonl(jsonl_processor, jsonl_content: str) -> Dict[str, Any]:
+    """
+    Load positions from enhanced JSONL content using the new processor.
+    Fixed to handle duplicate positions and foreign key constraints.
+    
+    Args:
+        jsonl_processor: Instance of enhanced JSONLProcessor
+        jsonl_content: String content of JSONL file
+        
+    Returns:
+        Dictionary with loading results
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Process JSONL content using enhanced processor
+        positions = jsonl_processor.process_jsonl_content(jsonl_content)
+        
+        positions_loaded = 0
+        positions_updated = 0
+        errors_encountered = 0
+        
+        for position_data in positions:
+            try:
+                # Check if position already exists
+                existing_position_id = None
+                if position_data.get('id'):
+                    cursor.execute('SELECT id FROM positions WHERE id = ?', (position_data['id'],))
+                    result = cursor.fetchone()
+                    if result:
+                        existing_position_id = result[0]
+                else:
+                    # Check by FEN
+                    cursor.execute('SELECT id FROM positions WHERE fen = ?', (position_data['fen'],))
+                    result = cursor.fetchone()
+                    if result:
+                        existing_position_id = result[0]
+                
+                if existing_position_id:
+                    # Update existing position
+                    cursor.execute('''
+                        UPDATE positions SET
+                            turn = ?, fullmove_number = ?, halfmove_clock = ?, castling_rights = ?, en_passant = ?,
+                            move_history = ?, last_move = ?, engine_depth = ?, analysis_time = ?,
+                            material_analysis = ?, mobility_analysis = ?, king_safety_analysis = ?, center_control_analysis = ?,
+                            pawn_structure_analysis = ?, piece_development_analysis = ?, comprehensive_analysis = ?,
+                            variation_analysis = ?, learning_insights = ?, visualization_data = ?, position_classification = ?,
+                            game_phase = ?, difficulty_rating = ?, themes = ?, position_type = ?, source_type = ?, title = ?,
+                            description = ?, solution_moves = ?, processed_timestamp = ?, processing_quality = ?
+                        WHERE id = ?
+                    ''', (
+                        position_data['turn'],
+                        position_data['fullmove_number'],
+                        position_data.get('halfmove_clock', 0),
+                        position_data.get('castling_rights'),
+                        position_data.get('en_passant'),
+                        json.dumps(position_data.get('move_history', {})),
+                        json.dumps(position_data.get('last_move', {})),
+                        position_data.get('engine_depth'),
+                        position_data.get('analysis_time'),
+                        json.dumps(position_data.get('material_analysis', {})),
+                        json.dumps(position_data.get('mobility_analysis', {})),
+                        json.dumps(position_data.get('king_safety_analysis', {})),
+                        json.dumps(position_data.get('center_control_analysis', {})),
+                        json.dumps(position_data.get('pawn_structure_analysis', {})),
+                        json.dumps(position_data.get('piece_development_analysis', {})),
+                        json.dumps(position_data.get('comprehensive_analysis', {})),
+                        json.dumps(position_data.get('variation_analysis', {})),
+                        json.dumps(position_data.get('learning_insights', {})),
+                        json.dumps(position_data.get('visualization_data', {})),
+                        json.dumps(position_data.get('position_classification', [])),
+                        position_data['game_phase'],
+                        position_data['difficulty_rating'],
+                        json.dumps(position_data.get('themes', [])),
+                        position_data.get('position_type', 'tactical'),
+                        position_data.get('source_type', 'upload'),
+                        position_data.get('title', ''),
+                        position_data.get('description', ''),
+                        json.dumps(position_data.get('solution_moves', [])),
+                        position_data.get('processed_timestamp'),
+                        position_data.get('processing_quality', 'standard'),
+                        existing_position_id
+                    ))
+                    position_id = existing_position_id
+                    positions_updated += 1
+                    
+                    # Delete existing moves for this position
+                    cursor.execute('DELETE FROM moves WHERE position_id = ?', (position_id,))
+                    
+                else:
+                    # Insert new position
+                    cursor.execute('''
+                        INSERT INTO positions (
+                            id, fen, turn, fullmove_number, halfmove_clock, castling_rights, en_passant,
+                            move_history, last_move, engine_depth, analysis_time,
+                            material_analysis, mobility_analysis, king_safety_analysis, center_control_analysis,
+                            pawn_structure_analysis, piece_development_analysis, comprehensive_analysis,
+                            variation_analysis, learning_insights, visualization_data, position_classification,
+                            game_phase, difficulty_rating, themes, position_type, source_type, title,
+                            description, solution_moves, timestamp, processed_timestamp, processing_quality
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        position_data.get('id'),
+                        position_data['fen'],
+                        position_data['turn'],
+                        position_data['fullmove_number'],
+                        position_data.get('halfmove_clock', 0),
+                        position_data.get('castling_rights'),
+                        position_data.get('en_passant'),
+                        json.dumps(position_data.get('move_history', {})),
+                        json.dumps(position_data.get('last_move', {})),
+                        position_data.get('engine_depth'),
+                        position_data.get('analysis_time'),
+                        json.dumps(position_data.get('material_analysis', {})),
+                        json.dumps(position_data.get('mobility_analysis', {})),
+                        json.dumps(position_data.get('king_safety_analysis', {})),
+                        json.dumps(position_data.get('center_control_analysis', {})),
+                        json.dumps(position_data.get('pawn_structure_analysis', {})),
+                        json.dumps(position_data.get('piece_development_analysis', {})),
+                        json.dumps(position_data.get('comprehensive_analysis', {})),
+                        json.dumps(position_data.get('variation_analysis', {})),
+                        json.dumps(position_data.get('learning_insights', {})),
+                        json.dumps(position_data.get('visualization_data', {})),
+                        json.dumps(position_data.get('position_classification', [])),
+                        position_data['game_phase'],
+                        position_data['difficulty_rating'],
+                        json.dumps(position_data.get('themes', [])),
+                        position_data.get('position_type', 'tactical'),
+                        position_data.get('source_type', 'upload'),
+                        position_data.get('title', ''),
+                        position_data.get('description', ''),
+                        json.dumps(position_data.get('solution_moves', [])),
+                        position_data.get('timestamp'),
+                        position_data.get('processed_timestamp'),
+                        position_data.get('processing_quality', 'standard')
+                    ))
+                    position_id = position_data.get('id') or cursor.lastrowid
+                    positions_loaded += 1
+                
+                # Insert enhanced top moves
+                for rank, move_data in enumerate(position_data.get('top_moves', []), 1):
+                    try:
+                        cursor.execute('''
+                            INSERT INTO moves (
+                                position_id, move, uci, score, depth, centipawn_loss, classification,
+                                principal_variation, tactics, position_impact, ml_evaluation,
+                                move_complexity, strategic_value, rank
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        ''', (
+                            position_id,
+                            move_data.get('move'),
+                            move_data.get('uci', ''),
+                            move_data.get('score', 0),
+                            move_data.get('depth', 0),
+                            move_data.get('centipawn_loss', 0),
+                            move_data.get('classification', 'unknown'),
+                            move_data.get('pv', ''),
+                            json.dumps(move_data.get('tactics', [])),
+                            json.dumps(move_data.get('position_impact', {})),
+                            json.dumps(move_data.get('ml_evaluation', {})),
+                            round(move_data.get('move_complexity', 0.0), 3),
+                            round(move_data.get('strategic_value', 0.0), 3),
+                            rank
+                        ))
+                    except Exception as move_error:
+                        print(f"Error inserting move for position {position_id}: {move_error}")
+                        continue
+                
+            except Exception as e:
+                errors_encountered += 1
+                print(f"Error processing position: {e}")
+                continue
+        
+        conn.commit()
+        
+        # Get processor statistics
+        stats = jsonl_processor.get_processing_stats()
+        
+        return {
+            'success': True,
+            'positions_loaded': positions_loaded,
+            'positions_updated': positions_updated,
+            'errors_encountered': errors_encountered,
+            'processor_stats': stats
+        }
+        
+    except Exception as e:
+        conn.rollback()
+        return {
+            'success': False,
+            'error': str(e),
+            'positions_loaded': 0
+        }
+    finally:
+        conn.close()
+
+def get_user_verification_stats() -> Dict[str, int]:
+    """Get user verification statistics - Fixed to handle missing columns."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        stats = {}
+        
+        # Check if verification columns exist
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        has_verification = 'is_verified' in columns and 'verification_status' in columns
+        
+        # Total users
+        cursor.execute('SELECT COUNT(*) FROM users')
+        stats['total_users'] = cursor.fetchone()[0]
+        
+        if has_verification:
+            # Verified users
+            cursor.execute('SELECT COUNT(*) FROM users WHERE is_verified = 1')
+            stats['verified_users'] = cursor.fetchone()[0]
+            
+            # Pending verification
+            cursor.execute('SELECT COUNT(*) FROM users WHERE verification_status = "pending"')
+            stats['pending_verification'] = cursor.fetchone()[0]
+        else:
+            # Fallback when verification columns don't exist
+            stats['verified_users'] = 0
+            stats['pending_verification'] = 0
+        
+        # Admin users
+        cursor.execute('SELECT COUNT(*) FROM users WHERE is_admin = 1')
+        stats['admin_users'] = cursor.fetchone()[0]
+        
+        # Recent registrations (last 7 days)
+        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
+        cursor.execute('SELECT COUNT(*) FROM users WHERE created_at > ?', (week_ago,))
+        stats['recent_registrations'] = cursor.fetchone()[0]
+        
+        return stats
+        
+    except Exception as e:
+        print(f"Error getting verification stats: {e}")
+        return {
+            'total_users': 0,
+            'verified_users': 0,
+            'pending_verification': 0,
+            'admin_users': 0,
+            'recent_registrations': 0
+        }
+    finally:
+        conn.close()
+
+def get_subscription_usage_stats() -> Dict[str, Any]:
+    """Get subscription usage statistics - Fixed with error handling."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        stats = {}
+        
+        # Check if subscription table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_subscriptions'")
+        if not cursor.fetchone():
+            return {'error': 'Subscription table not found'}
+        
+        # Average usage
+        cursor.execute('''
+            SELECT 
+                AVG(CAST(positions_used AS REAL)) as avg_positions,
+                AVG(CAST(analyses_used AS REAL)) as avg_analyses,
+                AVG(CAST(games_uploaded AS REAL)) as avg_games
+            FROM user_subscriptions
+        ''')
+        result = cursor.fetchone()
+        if result and any(result):
+            stats['average_usage'] = {
+                'positions': round(result[0] or 0, 2),
+                'analyses': round(result[1] or 0, 2),
+                'games': round(result[2] or 0, 2)
+            }
+        
+        # Users near limits
+        cursor.execute('''
+            SELECT COUNT(*) FROM user_subscriptions 
+            WHERE CAST(positions_used AS REAL) >= CAST(position_limit AS REAL) * 0.9
+        ''')
+        stats['users_near_position_limit'] = cursor.fetchone()[0]
+        
+        cursor.execute('''
+            SELECT COUNT(*) FROM user_subscriptions 
+            WHERE CAST(analyses_used AS REAL) >= CAST(analysis_limit AS REAL) * 0.9
+        ''')
+        stats['users_near_analysis_limit'] = cursor.fetchone()[0]
+        
+        return stats
+        
+    except Exception as e:
+        print(f"Error getting subscription stats: {e}")
+        return {'error': str(e)}
+    finally:
+        conn.close()
+
+
 def create_enhanced_tables():
-    """Create enhanced tables for user verification and subscription management."""
+    """Create enhanced tables for user verification and subscription management - FIXED VERSION."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -843,7 +1085,7 @@ def create_enhanced_tables():
         CREATE TABLE IF NOT EXISTS user_verification_requests (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
-            request_type TEXT DEFAULT 'manual_verification',
+            request_type TEXT DEFAULT 'registration',
             request_data TEXT,
             requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             reviewed_at TIMESTAMP,
@@ -954,7 +1196,7 @@ def create_enhanced_tables():
         conn.close()
 
 def upgrade_existing_database():
-    """Upgrade existing database to support new features."""
+    """Upgrade existing database to support new features - ENHANCED VERSION."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -977,8 +1219,11 @@ def upgrade_existing_database():
         
         for col_name, col_def in new_columns:
             if col_name not in columns:
-                cursor.execute(f'ALTER TABLE users ADD COLUMN {col_name} {col_def}')
-                print(f"Added column {col_name} to users table")
+                try:
+                    cursor.execute(f'ALTER TABLE users ADD COLUMN {col_name} {col_def}')
+                    print(f"Added column {col_name} to users table")
+                except Exception as e:
+                    print(f"Warning: Could not add column {col_name}: {e}")
         
         # Create new tables
         create_enhanced_tables()
@@ -988,7 +1233,7 @@ def upgrade_existing_database():
             cursor.execute('''
                 UPDATE users 
                 SET is_verified = TRUE, verification_status = 'approved', verified_at = ?
-                WHERE is_verified IS NULL OR is_verified = FALSE
+                WHERE (is_verified IS NULL OR is_verified = FALSE) AND is_admin = FALSE
             ''', (datetime.now().isoformat(),))
             print("Auto-approved existing users")
         
@@ -998,6 +1243,18 @@ def upgrade_existing_database():
             SET is_verified = TRUE, verification_status = 'approved', verified_at = ?
             WHERE is_admin = TRUE
         ''', (datetime.now().isoformat(),))
+        
+        # Ensure all users have subscriptions
+        cursor.execute('''
+            INSERT OR IGNORE INTO user_subscriptions (user_id, subscription_type, position_limit, analysis_limit, game_upload_limit)
+            SELECT id, 
+                   CASE WHEN is_admin = 1 THEN 'admin' ELSE 'basic' END,
+                   CASE WHEN is_admin = 1 THEN 999999 ELSE ? END,
+                   CASE WHEN is_admin = 1 THEN 999999 ELSE ? END,
+                   CASE WHEN is_admin = 1 THEN 999999 ELSE ? END
+            FROM users 
+            WHERE id NOT IN (SELECT user_id FROM user_subscriptions)
+        ''', (config.DEFAULT_POSITION_LIMIT, config.DEFAULT_ANALYSIS_LIMIT, config.DEFAULT_GAME_UPLOAD_LIMIT))
         
         conn.commit()
         return True
@@ -1009,149 +1266,300 @@ def upgrade_existing_database():
     finally:
         conn.close()
 
-def create_user_subscription(user_id: int, admin_user_id: Optional[int] = None) -> bool:
-    """Create default subscription for a user."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
+def safe_query_execution(cursor, query, params=None, fetch_method='fetchall'):
+    """Safely execute queries with proper error handling."""
     try:
-        # Check if subscription already exists
-        cursor.execute('SELECT id FROM user_subscriptions WHERE user_id = ?', (user_id,))
-        if cursor.fetchone():
-            return True  # Already exists
+        if params:
+            cursor.execute(query, params)
+        else:
+            cursor.execute(query)
         
-        # Create default subscription
-        reset_date = (datetime.now() + timedelta(days=30)).date()
-        
-        cursor.execute('''
-            INSERT INTO user_subscriptions (
-                user_id, subscription_type, position_limit, analysis_limit, 
-                game_upload_limit, reset_date, updated_by
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (
-            user_id, 'basic',
-            config.DEFAULT_POSITION_LIMIT,
-            config.DEFAULT_ANALYSIS_LIMIT,
-            config.DEFAULT_GAME_UPLOAD_LIMIT,
-            reset_date,
-            admin_user_id
-        ))
-        
-        conn.commit()
-        return True
-        
+        if fetch_method == 'fetchone':
+            return cursor.fetchone()
+        elif fetch_method == 'fetchall':
+            return cursor.fetchall()
+        elif fetch_method == 'fetchmany':
+            return cursor.fetchmany()
+        else:
+            return None
+            
     except Exception as e:
-        print(f"Error creating user subscription: {e}")
-        return False
-    finally:
-        conn.close()
+        print(f"Query execution error: {e}")
+        print(f"Query: {query}")
+        print(f"Params: {params}")
+        return None
 
-def log_admin_action(admin_user_id: int, action: str, target_user_id: Optional[int] = None, 
-                    target_resource: Optional[str] = None, action_data: Optional[Dict] = None) -> bool:
-    """Log admin action for audit trail."""
+def get_feature_access_data(user_id: int) -> Dict[str, Any]:
+    """Get feature access data with proper error handling."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
     try:
-        cursor.execute('''
-            INSERT INTO admin_audit_log (
-                admin_user_id, action, target_user_id, target_resource, action_data
-            ) VALUES (?, ?, ?, ?, ?)
-        ''', (
-            admin_user_id, action, target_user_id, target_resource,
-            json.dumps(action_data) if action_data else None
-        ))
+        # Check if table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_feature_access'")
+        if not cursor.fetchone():
+            return {}
         
-        conn.commit()
-        return True
+        # Get current custom feature access with safe query execution
+        result = safe_query_execution(cursor, '''
+            SELECT feature_name, access_granted, expires_at, notes
+            FROM user_feature_access 
+            WHERE user_id = ?
+        ''', (user_id,), 'fetchall')
         
-    except Exception as e:
-        print(f"Error logging admin action: {e}")
-        return False
-    finally:
-        conn.close()
-
-def get_user_verification_stats() -> Dict[str, int]:
-    """Get user verification statistics."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        stats = {}
-        
-        # Total users
-        cursor.execute('SELECT COUNT(*) FROM users')
-        stats['total_users'] = cursor.fetchone()[0]
-        
-        # Verified users
-        cursor.execute('SELECT COUNT(*) FROM users WHERE is_verified = TRUE')
-        stats['verified_users'] = cursor.fetchone()[0]
-        
-        # Pending verification
-        cursor.execute('SELECT COUNT(*) FROM users WHERE verification_status = "pending"')
-        stats['pending_verification'] = cursor.fetchone()[0]
-        
-        # Admin users
-        cursor.execute('SELECT COUNT(*) FROM users WHERE is_admin = TRUE')
-        stats['admin_users'] = cursor.fetchone()[0]
-        
-        # Recent registrations (last 7 days)
-        week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-        cursor.execute('SELECT COUNT(*) FROM users WHERE created_at > ?', (week_ago,))
-        stats['recent_registrations'] = cursor.fetchone()[0]
-        
-        return stats
-        
-    except Exception as e:
-        print(f"Error getting verification stats: {e}")
-        return {}
-    finally:
-        conn.close()
-
-def get_subscription_usage_stats() -> Dict[str, Any]:
-    """Get subscription usage statistics."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    try:
-        stats = {}
-        
-        # Average usage
-        cursor.execute('''
-            SELECT 
-                AVG(positions_used) as avg_positions,
-                AVG(analyses_used) as avg_analyses,
-                AVG(games_uploaded) as avg_games
-            FROM user_subscriptions
-        ''')
-        result = cursor.fetchone()
         if result:
-            stats['average_usage'] = {
-                'positions': round(result[0] or 0, 2),
-                'analyses': round(result[1] or 0, 2),
-                'games': round(result[2] or 0, 2)
-            }
+            # Convert to dictionary safely
+            feature_access = {}
+            for row in result:
+                if len(row) >= 2:  # Ensure we have at least feature_name and access_granted
+                    feature_name = row[0]
+                    access_granted = row[1]
+                    expires_at = row[2] if len(row) > 2 else None
+                    notes = row[3] if len(row) > 3 else None
+                    feature_access[feature_name] = {
+                        'granted': access_granted,
+                        'expires_at': expires_at,
+                        'notes': notes
+                    }
+            return feature_access
         
-        # Users near limits
-        cursor.execute('''
-            SELECT COUNT(*) FROM user_subscriptions 
-            WHERE positions_used >= position_limit * 0.9
-        ''')
-        stats['users_near_position_limit'] = cursor.fetchone()[0]
+        return {}
         
-        cursor.execute('''
-            SELECT COUNT(*) FROM user_subscriptions 
-            WHERE analyses_used >= analysis_limit * 0.9
-        ''')
-        stats['users_near_analysis_limit'] = cursor.fetchone()[0]
+    except Exception as e:
+        print(f"Error getting feature access data: {e}")
+        return {}
+    finally:
+        conn.close()
+
+def update_feature_access_safely(user_id: int, feature_updates: Dict[str, bool], 
+                                expires_at: str = None, notes: str = None, 
+                                admin_user_id: int = None) -> bool:
+    """Update feature access with proper error handling."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        success_count = 0
+        
+        for feature, granted in feature_updates.items():
+            try:
+                # Delete existing record
+                cursor.execute('''
+                    DELETE FROM user_feature_access 
+                    WHERE user_id = ? AND feature_name = ?
+                ''', (user_id, feature))
+                
+                # Insert new record if access granted
+                if granted:
+                    cursor.execute('''
+                        INSERT INTO user_feature_access (
+                            user_id, feature_name, access_granted, granted_at,
+                            granted_by, expires_at, notes
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        user_id, feature, True,
+                        datetime.now().isoformat(),
+                        admin_user_id,
+                        expires_at,
+                        notes
+                    ))
+                    success_count += 1
+                    
+            except Exception as feature_error:
+                print(f"Error updating feature {feature}: {feature_error}")
+                continue
+        
+        conn.commit()
+        
+        # Log action if admin_user_id provided
+        if admin_user_id:
+            log_admin_action(
+                admin_user_id,
+                'update_feature_access',
+                user_id,
+                'user_features',
+                {
+                    'features_updated': list(feature_updates.keys()),
+                    'grants_made': success_count
+                }
+            )
+        
+        return success_count > 0
+        
+    except Exception as e:
+        print(f"Error updating feature access: {e}")
+        conn.rollback()
+        return False
+    finally:
+        conn.close()
+
+def get_database_statistics() -> Dict[str, Any]:
+    """Get comprehensive database statistics."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        stats = {}
+        
+        # Get all tables
+        tables = get_all_tables()
+        
+        for table in tables:
+            try:
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                count = cursor.fetchone()[0]
+                stats[table] = count
+            except Exception as e:
+                print(f"Error counting table {table}: {e}")
+                stats[table] = 0
+        
+        # Additional statistics
+        stats['database_size_mb'] = get_database_size_mb()
+        stats['total_records'] = sum(stats.values())
+        stats['last_updated'] = datetime.now().isoformat()
         
         return stats
         
     except Exception as e:
-        print(f"Error getting subscription stats: {e}")
+        print(f"Error getting database statistics: {e}")
         return {}
     finally:
         conn.close()
+
+def get_database_size_mb() -> float:
+    """Get database file size in MB."""
+    try:
+        import os
+        if os.path.exists(config.DATABASE_PATH):
+            size_bytes = os.path.getsize(config.DATABASE_PATH)
+            return round(size_bytes / (1024 * 1024), 2)
+        return 0.0
+    except Exception as e:
+        print(f"Error getting database size: {e}")
+        return 0.0
+
+def clean_orphaned_records() -> Dict[str, int]:
+    """Clean orphaned records from various tables."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cleanup_results = {}
+        
+        # Clean orphaned moves
+        cursor.execute('''
+            DELETE FROM moves WHERE position_id NOT IN (SELECT id FROM positions)
+        ''')
+        cleanup_results['orphaned_moves'] = cursor.rowcount
+        
+        # Clean orphaned user_moves
+        cursor.execute('''
+            DELETE FROM user_moves WHERE user_id NOT IN (SELECT id FROM users)
+        ''')
+        cleanup_results['orphaned_user_moves'] = cursor.rowcount
+        
+        # Clean orphaned user_move_analysis
+        cursor.execute('''
+            DELETE FROM user_move_analysis WHERE user_id NOT IN (SELECT id FROM users)
+        ''')
+        cleanup_results['orphaned_analysis'] = cursor.rowcount
+        
+        # Clean orphaned subscriptions
+        cursor.execute('''
+            DELETE FROM user_subscriptions WHERE user_id NOT IN (SELECT id FROM users)
+        ''')
+        cleanup_results['orphaned_subscriptions'] = cursor.rowcount
+        
+        # Clean expired sessions
+        cursor.execute('''
+            DELETE FROM user_sessions WHERE expires_at < ?
+        ''', (datetime.now().isoformat(),))
+        cleanup_results['expired_sessions'] = cursor.rowcount
+        
+        conn.commit()
+        return cleanup_results
+        
+    except Exception as e:
+        print(f"Error cleaning orphaned records: {e}")
+        conn.rollback()
+        return {}
+    finally:
+        conn.close()
+
+# Additional helper functions for the consolidated admin interface
+
+def get_users_with_filters(status_filter: str = 'All', admin_filter: str = 'All', 
+                          account_filter: str = 'All') -> List[Dict[str, Any]]:
+    """Get users with applied filters."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Check what columns exist
+        cursor.execute("PRAGMA table_info(users)")
+        columns_info = cursor.fetchall()
+        available_columns = [col[1] for col in columns_info]
+        
+        # Build base query
+        base_columns = ['id', 'email', 'created_at', 'last_login', 'is_admin']
+        optional_columns = []
+        
+        if 'is_verified' in available_columns:
+            optional_columns.append('is_verified')
+        if 'verification_status' in available_columns:
+            optional_columns.append('verification_status')
+        if 'account_status' in available_columns:
+            optional_columns.append('account_status')
+        if 'full_name' in available_columns:
+            optional_columns.append('full_name')
+        
+        all_columns = base_columns + optional_columns
+        
+        query = f"SELECT {', '.join(all_columns)} FROM users WHERE 1=1"
+        params = []
+        
+        # Apply filters
+        if status_filter != 'All' and 'verification_status' in available_columns:
+            query += " AND verification_status = ?"
+            params.append(status_filter)
+        
+        if admin_filter == 'Admin':
+            query += " AND is_admin = 1"
+        elif admin_filter == 'Regular Users':
+            query += " AND is_admin = 0"
+        
+        if account_filter != 'All' and 'account_status' in available_columns:
+            query += " AND account_status = ?"
+            params.append(account_filter)
+        
+        query += " ORDER BY created_at DESC"
+        
+        result = safe_query_execution(cursor, query, params, 'fetchall')
+        
+        if result:
+            users = []
+            for row in result:
+                user_dict = {}
+                for i, col in enumerate(all_columns):
+                    if i < len(row):
+                        user_dict[col] = row[i]
+                users.append(user_dict)
+            return users
+        
+        return []
+        
+    except Exception as e:
+        print(f"Error getting filtered users: {e}")
+        return []
+    finally:
+        conn.close()
+
+# Make functions available
+__all__ = [
+    'create_enhanced_tables', 'upgrade_existing_database', 'safe_query_execution',
+    'get_feature_access_data', 'update_feature_access_safely', 'get_database_statistics',
+    'get_database_size_mb', 'clean_orphaned_records', 'get_users_with_filters'
+]
 
 # Initialize enhanced database on import
 if __name__ == "__main__":
@@ -1170,3 +1578,5 @@ if __name__ == "__main__":
     upgrade_existing_database()
     print("Enhanced database initialization complete.")
     print("✅ Enhanced Kuikma Chess Engine database initialized successfully!")
+
+

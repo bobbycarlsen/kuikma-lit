@@ -1,4 +1,4 @@
-# user_dashboard.py - User Dashboard Component
+# user_dashboard.py - Fixed User Dashboard Component
 """
 User dashboard component displaying account status, subscription usage,
 recent activity, and account management options.
@@ -159,76 +159,88 @@ def display_subscription_tab(user_id: int):
     """Display subscription information and usage."""
     st.markdown("### 💳 Subscription & Usage")
     
-    subscription = get_user_subscription(user_id)
-    
-    if not subscription:
-        st.error("❌ Could not load subscription information")
-        return
-    
-    # Subscription type and overview
-    st.markdown(f"**Subscription Type:** {subscription['subscription_type'].title()}")
-    
-    if subscription.get('reset_date'):
-        st.markdown(f"**Next Reset:** {subscription['reset_date']}")
-    
-    st.markdown("---")
-    
-    # Usage meters
-    st.markdown("#### 📊 Usage Overview")
-    
-    # Position usage
-    position_usage = subscription['positions_used'] / subscription['position_limit']
-    st.markdown("**Training Positions**")
-    st.progress(position_usage)
-    st.caption(f"{subscription['positions_used']} of {subscription['position_limit']} used ({subscription['positions_remaining']} remaining)")
-    
-    # Analysis usage
-    analysis_usage = subscription['analyses_used'] / subscription['analysis_limit']
-    st.markdown("**Analysis Credits**")
-    st.progress(analysis_usage)
-    st.caption(f"{subscription['analyses_used']} of {subscription['analysis_limit']} used ({subscription['analyses_remaining']} remaining)")
-    
-    # Game upload usage
-    game_usage = subscription['games_uploaded'] / subscription['game_upload_limit']
-    st.markdown("**Game Uploads**")
-    st.progress(game_usage)
-    st.caption(f"{subscription['games_uploaded']} of {subscription['game_upload_limit']} used ({subscription['games_remaining']} remaining)")
-    
-    # Usage warnings
-    if position_usage > 0.8:
-        st.warning("⚠️ You're running low on training positions!")
-    
-    if analysis_usage > 0.8:
-        st.warning("⚠️ You're running low on analysis credits!")
-    
-    if game_usage > 0.8:
-        st.warning("⚠️ You're approaching your game upload limit!")
-    
-    # Subscription details
-    with st.expander("📋 Subscription Details"):
-        details_data = {
-            'Feature': ['Position Limit', 'Analysis Limit', 'Game Upload Limit', 'Subscription Type'],
-            'Current': [
-                subscription['position_limit'],
-                subscription['analysis_limit'], 
-                subscription['game_upload_limit'],
-                subscription['subscription_type'].title()
-            ],
-            'Used': [
-                subscription['positions_used'],
-                subscription['analyses_used'],
-                subscription['games_uploaded'],
-                'N/A'
-            ]
-        }
+    try:
+        subscription = get_user_subscription(user_id)
         
-        df = pd.DataFrame(details_data)
-        st.dataframe(df, use_container_width=True, hide_index=True)
-    
-    # Upgrade information
-    st.markdown("---")
-    st.markdown("#### 🚀 Need More Resources?")
-    st.info("Contact an administrator to upgrade your subscription or increase your limits.")
+        if not subscription:
+            # Try to create default subscription if missing
+            from database import create_user_subscription
+            if create_user_subscription(user_id):
+                subscription = get_user_subscription(user_id)
+            
+            if not subscription:
+                st.error("❌ Could not load subscription information")
+                st.info("💡 Contact an administrator to set up your subscription.")
+                return
+        
+        # Subscription type and overview
+        st.markdown(f"**Subscription Type:** {subscription['subscription_type'].title()}")
+        
+        if subscription.get('reset_date'):
+            st.markdown(f"**Next Reset:** {subscription['reset_date']}")
+        
+        st.markdown("---")
+        
+        # Usage meters
+        st.markdown("#### 📊 Usage Overview")
+        
+        # Position usage
+        position_usage = subscription['positions_used'] / max(subscription['position_limit'], 1)
+        st.markdown("**Training Positions**")
+        st.progress(min(position_usage, 1.0))
+        st.caption(f"{subscription['positions_used']} of {subscription['position_limit']} used ({subscription['positions_remaining']} remaining)")
+        
+        # Analysis usage
+        analysis_usage = subscription['analyses_used'] / max(subscription['analysis_limit'], 1)
+        st.markdown("**Analysis Credits**")
+        st.progress(min(analysis_usage, 1.0))
+        st.caption(f"{subscription['analyses_used']} of {subscription['analysis_limit']} used ({subscription['analyses_remaining']} remaining)")
+        
+        # Game upload usage
+        game_usage = subscription['games_uploaded'] / max(subscription['game_upload_limit'], 1)
+        st.markdown("**Game Uploads**")
+        st.progress(min(game_usage, 1.0))
+        st.caption(f"{subscription['games_uploaded']} of {subscription['game_upload_limit']} used ({subscription['games_remaining']} remaining)")
+        
+        # Usage warnings
+        if position_usage > 0.8:
+            st.warning("⚠️ You're running low on training positions!")
+        
+        if analysis_usage > 0.8:
+            st.warning("⚠️ You're running low on analysis credits!")
+        
+        if game_usage > 0.8:
+            st.warning("⚠️ You're approaching your game upload limit!")
+        
+        # Subscription details
+        with st.expander("📋 Subscription Details"):
+            details_data = {
+                'Feature': ['Position Limit', 'Analysis Limit', 'Game Upload Limit', 'Subscription Type'],
+                'Current': [
+                    subscription['position_limit'],
+                    subscription['analysis_limit'], 
+                    subscription['game_upload_limit'],
+                    subscription['subscription_type'].title()
+                ],
+                'Used': [
+                    subscription['positions_used'],
+                    subscription['analyses_used'],
+                    subscription['games_uploaded'],
+                    'N/A'
+                ]
+            }
+            
+            df = pd.DataFrame(details_data)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # Upgrade information
+        st.markdown("---")
+        st.markdown("#### 🚀 Need More Resources?")
+        st.info("Contact an administrator to upgrade your subscription or increase your limits.")
+        
+    except Exception as e:
+        st.error(f"❌ Error loading subscription information: {e}")
+        st.info("💡 Contact an administrator for assistance.")
 
 def display_activity_tab(user_id: int):
     """Display user activity and history."""
@@ -239,10 +251,10 @@ def display_activity_tab(user_id: int):
     cursor = conn.cursor()
     
     try:
-        # Recent training moves
+        # Fixed query to use correct column name 'result' instead of 'is_correct'
         cursor.execute('''
             SELECT DATE(timestamp) as date, COUNT(*) as moves,
-                   SUM(CASE WHEN is_correct = 1 THEN 1 ELSE 0 END) as correct_moves
+                   SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) as correct_moves
             FROM user_moves 
             WHERE user_id = ? AND timestamp > ?
             GROUP BY DATE(timestamp)
@@ -318,6 +330,9 @@ def display_activity_tab(user_id: int):
     
     except Exception as e:
         st.error(f"Error loading activity data: {e}")
+        # Add debug info for admin users
+        if st.session_state.get('user_info', {}).get('is_admin'):
+            st.code(f"Debug info: {str(e)}")
     
     finally:
         conn.close()
@@ -368,22 +383,24 @@ def display_account_settings_tab(user_id: int, user_info: Dict):
     
     st.markdown("---")
     
+    # Training preferences (consolidated here)
+    display_training_preferences(user_id)
+    
+    st.markdown("---")
+    
     # Account information
     st.markdown("#### ℹ️ Account Information")
     
-    info_data = {
-        'Field': ['User ID', 'Email', 'Account Type', 'Verification Status', 'Created', 'Last Login'],
-        'Value': [
-            user_info.get('id', 'N/A'),
-            user_info.get('email', 'N/A'),
-            'Admin' if user_info.get('is_admin') else 'Regular User',
-            user_info.get('verification_status', 'Unknown').title(),
-            user_info.get('created_at', 'N/A'),
-            user_info.get('last_login', 'Never')
-        ]
-    }
+    # Use simple dict for dataframe to avoid PyArrow issues
+    info_data = []
+    info_data.append(['User ID', str(user_info.get('id', 'N/A'))])
+    info_data.append(['Email', str(user_info.get('email', 'N/A'))])
+    info_data.append(['Account Type', 'Admin' if user_info.get('is_admin') else 'Regular User'])
+    info_data.append(['Verification Status', str(user_info.get('verification_status', 'Unknown')).title()])
+    info_data.append(['Created', str(user_info.get('created_at', 'N/A'))])
+    info_data.append(['Last Login', str(user_info.get('last_login', 'Never'))])
     
-    df_info = pd.DataFrame(info_data)
+    df_info = pd.DataFrame(info_data, columns=['Field', 'Value'])
     st.dataframe(df_info, use_container_width=True, hide_index=True)
     
     # Export data
@@ -392,6 +409,63 @@ def display_account_settings_tab(user_id: int, user_info: Dict):
     
     if st.button("📄 Export Personal Data", use_container_width=True):
         export_user_data(user_id)
+
+def display_training_preferences(user_id: int):
+    """Display training preferences settings."""
+    st.markdown("#### 🎯 Training Preferences")
+    
+    # Get current settings
+    from auth import get_user_settings, update_user_settings
+    current_settings = get_user_settings(user_id)
+    
+    with st.form("training_preferences_form"):
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            random_positions = st.checkbox(
+                "Random position selection",
+                value=current_settings.get('random_positions', True),
+                help="Select positions randomly instead of sequentially"
+            )
+            
+            top_n_threshold = st.slider(
+                "Top N moves threshold",
+                min_value=1,
+                max_value=10,
+                value=current_settings.get('top_n_threshold', 3),
+                help="Consider moves within top N as correct"
+            )
+        
+        with col2:
+            score_difference_threshold = st.slider(
+                "Score difference threshold (centipawns)",
+                min_value=5,
+                max_value=50,
+                value=current_settings.get('score_difference_threshold', 10),
+                help="Maximum centipawn loss for a move to be considered correct"
+            )
+            
+            theme = st.selectbox(
+                "Board theme",
+                ["default", "dark", "blue", "green", "wood"],
+                index=["default", "dark", "blue", "green", "wood"].index(current_settings.get('theme', 'default')),
+                help="Visual theme for the chess board"
+            )
+        
+        # Save settings
+        if st.form_submit_button("💾 Save Training Preferences", use_container_width=True):
+            new_settings = {
+                'random_positions': random_positions,
+                'top_n_threshold': top_n_threshold,
+                'score_difference_threshold': score_difference_threshold,
+                'theme': theme
+            }
+            
+            if update_user_settings(user_id, new_settings):
+                st.success("✅ Training preferences saved successfully!")
+                st.rerun()
+            else:
+                st.error("❌ Failed to save training preferences")
 
 def request_verification_review(user_id: int):
     """Request a verification review."""
@@ -464,15 +538,17 @@ def export_user_data(user_id: int):
             SELECT email, full_name, created_at, last_login, verification_status
             FROM users WHERE id = ?
         ''', (user_id,))
-        user_data['profile'] = dict(zip(['email', 'full_name', 'created_at', 'last_login', 'verification_status'], cursor.fetchone() or []))
+        result = cursor.fetchone()
+        if result:
+            user_data['profile'] = dict(zip(['email', 'full_name', 'created_at', 'last_login', 'verification_status'], result))
         
-        # Training moves
+        # Training moves - fixed query
         cursor.execute('''
-            SELECT position_id, move, is_correct, timestamp, time_taken
+            SELECT position_id, move_id, result, timestamp, time_taken
             FROM user_moves WHERE user_id = ?
             ORDER BY timestamp DESC
         ''', (user_id,))
-        user_data['training_moves'] = [dict(zip(['position_id', 'move', 'is_correct', 'timestamp', 'time_taken'], row)) for row in cursor.fetchall()]
+        user_data['training_moves'] = [dict(zip(['position_id', 'move_id', 'result', 'timestamp', 'time_taken'], row)) for row in cursor.fetchall()]
         
         # Subscription info
         cursor.execute('''

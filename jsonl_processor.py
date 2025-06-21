@@ -1,4 +1,4 @@
-# chess_engine/jsonl_processor.py
+# jsonl_processor.py
 import json
 import chess
 import logging
