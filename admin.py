@@ -1216,45 +1216,154 @@ def display_system_settings_section():
     st.info("💡 To modify these settings, update the .env file and restart the application.")
 
 def display_maintenance_section():
-    """System maintenance section."""
+    """Enhanced maintenance section with positions/moves cleanup."""
     st.markdown("### 🛠️ System Maintenance")
     
-    maintenance_col1, maintenance_col2 = st.columns(2)
+    # Cleanup Operations
+    st.markdown("#### 🧹 Cleanup Operations")
     
-    with maintenance_col1:
+    cleanup_col1, cleanup_col2, cleanup_col3 = st.columns(3)
+    
+    with cleanup_col1:
         if st.button("🧹 Clean Orphaned Records", use_container_width=True):
             with st.spinner("Cleaning orphaned records..."):
                 try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
+                    cleanup_results = clean_orphaned_records()
                     
-                    # Clean orphaned moves
-                    cursor.execute('''
-                        DELETE FROM moves WHERE position_id NOT IN (SELECT id FROM positions)
-                    ''')
-                    orphaned_moves = cursor.rowcount
+                    st.success("✅ Orphaned records cleanup completed!")
+                    for key, value in cleanup_results.items():
+                        if value > 0:
+                            st.info(f"• {key.replace('_', ' ').title()}: {value} records removed")
                     
-                    # Clean orphaned user_moves
-                    cursor.execute('''
-                        DELETE FROM user_moves WHERE user_id NOT IN (SELECT id FROM users)
-                    ''')
-                    orphaned_user_moves = cursor.rowcount
-                    
-                    conn.commit()
-                    conn.close()
-                    
-                    st.success(f"✅ Cleaned {orphaned_moves} orphaned moves and {orphaned_user_moves} orphaned user moves")
-                    
-                except Exception as e:
-                    st.error(f"❌ Cleanup failed: {e}")
+                    if not any(cleanup_results.values()):
+                        st.info("• No orphaned records found")
+                        
+                except Exception as cleanup_error:
+                    st.error(f"❌ Cleanup failed: {cleanup_error}")
     
-    with maintenance_col2:
+    with cleanup_col2:
+        if st.button("🎯 Clean Positions & Moves", use_container_width=True, type="primary"):
+            if st.session_state.get('confirm_positions_cleanup'):
+                with st.spinner("Cleaning positions and moves data..."):
+                    try:
+                        cleanup_stats = clean_positions_and_moves()
+                        
+                        if cleanup_stats.get('success'):
+                            st.success("✅ Positions and moves cleanup completed!")
+                            st.info(f"📊 Total records removed: {cleanup_stats['total_records_removed']}")
+                            
+                            # Show detailed breakdown
+                            with st.expander("📋 Cleanup Details"):
+                                for table, count in cleanup_stats.items():
+                                    if table not in ['success', 'total_records_removed'] and count > 0:
+                                        st.write(f"• {table}: {count} records")
+                        else:
+                            st.error(f"❌ Cleanup failed: {cleanup_stats.get('error', 'Unknown error')}")
+                        
+                        st.session_state.confirm_positions_cleanup = False
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"❌ Positions cleanup failed: {e}")
+                        st.session_state.confirm_positions_cleanup = False
+            else:
+                st.warning("⚠️ This will delete ALL training positions, moves, and user progress!")
+                st.session_state.confirm_positions_cleanup = True
+                st.info("Click again to confirm deletion")
+    
+    with cleanup_col3:
         if st.button("📊 Rebuild Indexes", use_container_width=True):
             with st.spinner("Rebuilding database indexes..."):
                 if optimize_database():
                     st.success("✅ Indexes rebuilt successfully!")
                 else:
                     st.error("❌ Index rebuild failed")
+    
+    st.markdown("---")
+    
+    # Enhanced Database Reset Options
+    st.markdown("#### 🗑️ Database Reset Options")
+    
+    reset_type = st.selectbox(
+        "Choose reset type:",
+        ["complete", "training_data", "positions_only", "users_only", "games_only"],
+        format_func=lambda x: {
+            "complete": "🔴 Complete Reset (ALL DATA)",
+            "training_data": "🟠 Training Data (Positions, Moves, User Progress)",
+            "positions_only": "🟡 Positions & Moves Only", 
+            "users_only": "🟢 Users & Sessions Only",
+            "games_only": "🔵 Games Only"
+        }[x]
+    )
+    
+    # Show what will be deleted for each option
+    reset_descriptions = {
+        "complete": "⚠️ **EVERYTHING** - All tables will be dropped and recreated",
+        "training_data": "🎯 **Training Data** - Positions, moves, user_moves, user_move_analysis, training_sessions",
+        "positions_only": "🎲 **Positions & Moves** - position and moves tables only",
+        "users_only": "👥 **User Data** - All user accounts, settings, subscriptions, sessions",
+        "games_only": "🎮 **Game Data** - All uploaded games and game analysis"
+    }
+    
+    st.markdown(reset_descriptions[reset_type])
+    
+    reset_col1, reset_col2 = st.columns(2)
+    
+    with reset_col1:
+        if st.button("❌ Cancel Reset", use_container_width=True):
+            if 'show_reset_options' in st.session_state:
+                del st.session_state.show_reset_options
+            st.rerun()
+    
+    with reset_col2:
+        confirmation = st.text_input("Type 'CONFIRM' to proceed:", key="reset_confirmation")
+        if st.button("🗑️ RESET DATABASE", use_container_width=True, type="primary"):
+            if confirmation == "CONFIRM":
+                with st.spinner(f"Resetting database ({reset_type})..."):
+                    if reset_database_enhanced(reset_type):
+                        st.success(f"✅ Database reset completed: {reset_type}")
+                        # Clear session state
+                        for key in list(st.session_state.keys()):
+                            if key not in ['selected_page']:
+                                del st.session_state[key]
+                        st.rerun()
+                    else:
+                        st.error("❌ Reset failed")
+            else:
+                st.error("Please type 'CONFIRM' to proceed")
+    
+    st.markdown("---")
+    
+    # Table Statistics
+    st.markdown("#### 📊 Database Statistics")
+    
+    if st.button("📈 Get Detailed Statistics", use_container_width=True):
+        with st.spinner("Analyzing database..."):
+            stats = get_table_statistics()
+            
+            if 'error' not in stats:
+                # Create summary
+                total_rows = sum(table_stats['row_count'] for table_stats in stats.values() if isinstance(table_stats, dict))
+                total_size_mb = sum(table_stats['size_mb'] for table_stats in stats.values() if isinstance(table_stats, dict))
+                
+                st.metric("Total Records", f"{total_rows:,}")
+                st.metric("Total Size", f"{total_size_mb:.2f} MB")
+                
+                # Create detailed table
+                table_data = []
+                for table_name, table_stats in stats.items():
+                    if isinstance(table_stats, dict) and 'error' not in table_stats:
+                        table_data.append([
+                            table_name,
+                            f"{table_stats['row_count']:,}",
+                            f"{table_stats['size_mb']:.3f} MB"
+                        ])
+                
+                if table_data:
+                    df_stats = pd.DataFrame(table_data, columns=['Table', 'Rows', 'Size'])
+                    st.dataframe(df_stats, use_container_width=True, hide_index=True)
+            else:
+                st.error(f"Error getting statistics: {stats['error']}")
     
     # System status
     st.markdown("#### 📊 System Status")
@@ -1282,8 +1391,8 @@ def display_maintenance_section():
             db_size = os.path.getsize(config.DATABASE_PATH)
             st.metric("Database Size", f"{db_size // (2**20)} MB")
         
-    except Exception as e:
-        st.error(f"Error getting system status: {e}")
+    except Exception as status_error:
+        st.error(f"Error getting system status: {status_error}")
 
 def display_feature_access_panel():
     """Feature access control panel - FIXED VERSION."""
@@ -1745,6 +1854,252 @@ def display_maintenance_panel():
             
     except Exception as e:
         st.error(f"Error in maintenance panel: {e}")
+
+
+def clean_positions_and_moves() -> Dict[str, int]:
+    """
+    Clean up positions and moves tables with proper foreign key handling.
+    
+    Returns:
+        Dictionary with cleanup statistics
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        cleanup_stats = {}
+        
+        # Temporarily disable foreign key constraints for cleanup
+        cursor.execute('PRAGMA foreign_keys = OFF')
+        
+        # Get counts before deletion
+        cursor.execute('SELECT COUNT(*) FROM moves')
+        moves_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM positions')
+        positions_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM user_moves')
+        user_moves_count = cursor.fetchone()[0]
+        
+        cursor.execute('SELECT COUNT(*) FROM user_move_analysis')
+        user_analysis_count = cursor.fetchone()[0]
+        
+        # Delete in proper order (child tables first)
+        
+        # 1. Delete user move analysis
+        cursor.execute('DELETE FROM user_move_analysis')
+        cleanup_stats['user_move_analysis'] = user_analysis_count
+        
+        # 2. Delete user moves
+        cursor.execute('DELETE FROM user_moves')
+        cleanup_stats['user_moves'] = user_moves_count
+        
+        # 3. Delete moves (child of positions)
+        cursor.execute('DELETE FROM moves')
+        cleanup_stats['moves'] = moves_count
+        
+        # 4. Delete positions (parent table)
+        cursor.execute('DELETE FROM positions')
+        cleanup_stats['positions'] = positions_count
+        
+        # Reset auto-increment counters
+        cursor.execute('DELETE FROM sqlite_sequence WHERE name IN ("positions", "moves", "user_moves", "user_move_analysis")')
+        
+        # Re-enable foreign key constraints
+        cursor.execute('PRAGMA foreign_keys = ON')
+        
+        conn.commit()
+        
+        cleanup_stats['success'] = True
+        cleanup_stats['total_records_removed'] = sum([
+            moves_count, positions_count, user_moves_count, user_analysis_count
+        ])
+        
+        return cleanup_stats
+        
+    except Exception as e:
+        conn.rollback()
+        # Re-enable foreign key constraints even on error
+        cursor.execute('PRAGMA foreign_keys = ON')
+        return {
+            'success': False,
+            'error': str(e),
+            'total_records_removed': 0
+        }
+    finally:
+        conn.close()
+
+def reset_database_enhanced(reset_type: str = "complete") -> bool:
+    """
+    Enhanced reset database with proper foreign key handling.
+    
+    Args:
+        reset_type: 'complete', 'positions_only', 'users_only', 'games_only', 'training_data'
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        # Temporarily disable foreign key constraints
+        cursor.execute('PRAGMA foreign_keys = OFF')
+        
+        if reset_type == "complete":
+            # Drop all tables and recreate
+            tables = get_all_tables()
+            
+            # Skip system tables
+            user_tables = [table for table in tables if not table.startswith('sqlite_')]
+            
+            for table in user_tables:
+                try:
+                    cursor.execute(f"DROP TABLE IF EXISTS {table}")
+                    print(f"Dropped table: {table}")
+                except Exception as e:
+                    print(f"Warning: Could not drop table {table}: {e}")
+            
+            # Reset sequence table
+            cursor.execute("DELETE FROM sqlite_sequence")
+            
+            conn.commit()
+            
+            # Re-enable foreign keys and recreate database
+            cursor.execute('PRAGMA foreign_keys = ON')
+            conn.close()
+            
+            # Recreate database structure
+            init_db()
+            create_admin_user()
+            return True
+            
+        elif reset_type == "positions_only" or reset_type == "training_data":
+            # Clean training and position data in proper order
+            
+            # Delete user training data first
+            cursor.execute("DELETE FROM user_move_analysis")
+            cursor.execute("DELETE FROM user_moves")
+            cursor.execute("DELETE FROM training_sessions")
+            
+            # Delete moves (child of positions)
+            cursor.execute("DELETE FROM moves")
+            
+            # Delete positions (parent table)
+            cursor.execute("DELETE FROM positions")
+            
+            # Reset auto-increment for these tables
+            cursor.execute('''
+                DELETE FROM sqlite_sequence 
+                WHERE name IN ("positions", "moves", "user_moves", "user_move_analysis", "training_sessions")
+            ''')
+            
+        elif reset_type == "users_only":
+            # Delete user data in proper order
+            user_related_tables = [
+                'user_move_analysis',
+                'user_moves',
+                'training_sessions',
+                'user_game_analysis',
+                'user_saved_games',
+                'user_game_sessions',
+                'user_insights_cache',
+                'user_verification_requests',
+                'user_subscriptions',
+                'user_feature_access',
+                'user_sessions',
+                'user_settings',
+                'admin_audit_log',
+                'users'
+            ]
+            
+            for table in user_related_tables:
+                try:
+                    cursor.execute(f"DELETE FROM {table}")
+                    print(f"Cleaned table: {table}")
+                except Exception as e:
+                    print(f"Warning: Could not clean table {table}: {e}")
+            
+            # Reset sequences for user tables
+            cursor.execute('''
+                DELETE FROM sqlite_sequence 
+                WHERE name IN ('users', 'user_moves', 'user_move_analysis', 'training_sessions', 
+                              'user_game_analysis', 'user_saved_games', 'user_verification_requests',
+                              'user_subscriptions', 'user_feature_access', 'admin_audit_log')
+            ''')
+            
+        elif reset_type == "games_only":
+            # Delete game data in proper order
+            cursor.execute("DELETE FROM user_game_analysis")
+            cursor.execute("DELETE FROM user_saved_games")
+            cursor.execute("DELETE FROM user_game_sessions")
+            cursor.execute("DELETE FROM games")
+            
+            # Reset sequences
+            cursor.execute('''
+                DELETE FROM sqlite_sequence 
+                WHERE name IN ("games", "user_game_analysis", "user_saved_games", "user_game_sessions")
+            ''')
+        
+        # Re-enable foreign key constraints
+        cursor.execute('PRAGMA foreign_keys = ON')
+        conn.commit()
+        
+        # Recreate admin user if users were reset
+        if reset_type in ["complete", "users_only"]:
+            conn.close()
+            create_admin_user()
+        else:
+            conn.close()
+            
+        return True
+        
+    except Exception as e:
+        print(f"Error resetting database: {e}")
+        conn.rollback()
+        # Re-enable foreign key constraints even on error
+        cursor.execute('PRAGMA foreign_keys = ON')
+        conn.close()
+        return False
+
+def get_table_statistics() -> Dict[str, Dict[str, Any]]:
+    """Get detailed statistics for all tables."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    try:
+        stats = {}
+        tables = get_all_tables()
+        
+        for table in tables:
+            try:
+                # Get row count
+                cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                row_count = cursor.fetchone()[0]
+                
+                # Get table size (approximate)
+                cursor.execute(f"SELECT SUM(LENGTH(quote(hex(*)))) FROM {table}")
+                size_result = cursor.fetchone()
+                size_bytes = size_result[0] if size_result and size_result[0] else 0
+                
+                stats[table] = {
+                    'row_count': row_count,
+                    'size_bytes': size_bytes,
+                    'size_mb': round(size_bytes / (1024 * 1024), 3) if size_bytes else 0
+                }
+                
+            except Exception as e:
+                stats[table] = {
+                    'row_count': 0,
+                    'size_bytes': 0,
+                    'size_mb': 0,
+                    'error': str(e)
+                }
+        
+        return stats
+        
+    except Exception as e:
+        return {'error': str(e)}
+    finally:
+        conn.close()
 
 # Make function available for import
 __all__ = ['display_consolidated_admin', 'display_feature_access_panel', 'display_analytics_panel', 'display_maintenance_panel']

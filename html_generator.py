@@ -362,12 +362,13 @@ class ComprehensiveHTMLGenerator:
         """Generate the problem presentation section with dynamic task description."""
         move_history = self._extract_move_history(position_data)
         themes = position_data.get('themes', [])
-        
+        # tmp fix for I K A N
+        themes = sorted(themes, key=len, reverse=True)
         themes_html = ""
         if themes:
             theme_tags = ''.join([
                 f'<span class="theme-tag">{theme.replace("_", " ").title()}</span>' 
-                for theme in themes[:8]
+                for theme in themes[:7]
             ])
             themes_html = f'<div style="margin-top: 1rem;">{theme_tags}</div>'
         
@@ -798,9 +799,6 @@ class ComprehensiveHTMLGenerator:
                 pass
         return ""
 
-    # All other existing methods remain the same, but with color coding applied where appropriate
-    # For brevity, I'll include the key remaining methods with placeholders for the rest
-
     def _generate_comparative_analysis_section(self, position_data: Dict[str, Any], best_move: Dict[str, Any]) -> str:
         """Generate comprehensive comparative analysis."""
         material_analysis = position_data.get('material_analysis', {})
@@ -840,23 +838,23 @@ class ComprehensiveHTMLGenerator:
                     </tr>
                     <tr>
                         <td>Pawns</td>
-                        <td>{material_analysis.get('white_pawns', 0)}</td>
-                        <td>{material_analysis.get('black_pawns', 0)}</td>
-                        <td>{material_analysis.get('white_pawns', 0) - material_analysis.get('black_pawns', 0)}</td>
+                        <td>{int(material_analysis.get('white_pawns', 0))}</td>
+                        <td>{int(material_analysis.get('black_pawns', 0))}</td>
+                        <td>{int(material_analysis.get('white_pawns', 0)) - int(material_analysis.get('black_pawns', 0))}</td>
                         <td>—</td>
                     </tr>
                     <tr>
                         <td>Minor Pieces</td>
-                        <td>{material_analysis.get('white_knights', 0) + material_analysis.get('white_bishops', 0)}</td>
-                        <td>{material_analysis.get('black_knights', 0) + material_analysis.get('black_bishops', 0)}</td>
-                        <td>{(material_analysis.get('white_knights', 0) + material_analysis.get('white_bishops', 0)) - (material_analysis.get('black_knights', 0) + material_analysis.get('black_bishops', 0))}</td>
+                        <td>{int(material_analysis.get('white_knights', 0)) + int(material_analysis.get('white_bishops', 0))}</td>
+                        <td>{int(material_analysis.get('black_knights', 0)) + int(material_analysis.get('black_bishops', 0))}</td>
+                        <td>{(int(material_analysis.get('white_knights', 0)) + int(material_analysis.get('white_bishops', 0))) - (int(material_analysis.get('black_knights', 0)) + int(material_analysis.get('black_bishops', 0)))}</td>
                         <td>—</td>
                     </tr>
                     <tr>
                         <td>Major Pieces</td>
-                        <td>{material_analysis.get('white_rooks', 0) + material_analysis.get('white_queens', 0)}</td>
-                        <td>{material_analysis.get('black_rooks', 0) + material_analysis.get('black_queens', 0)}</td>
-                        <td>{(material_analysis.get('white_rooks', 0) + material_analysis.get('white_queens', 0)) - (material_analysis.get('black_rooks', 0) + material_analysis.get('black_queens', 0))}</td>
+                        <td>{int(material_analysis.get('white_rooks', 0)) + int(material_analysis.get('white_queens', 0))}</td>
+                        <td>{int(material_analysis.get('black_rooks', 0)) + int(material_analysis.get('black_queens', 0))}</td>
+                        <td>{(int(material_analysis.get('white_rooks', 0)) + int(material_analysis.get('white_queens', 0))) - (int(material_analysis.get('black_rooks', 0)) + int(material_analysis.get('black_queens', 0)))}</td>
                         <td>—</td>
                     </tr>
                 </tbody>
@@ -876,9 +874,9 @@ class ComprehensiveHTMLGenerator:
                 <tbody>
                     <tr>
                         <td><strong>Mobility</strong></td>
-                        <td>{mobility_analysis.get('white_total', 0)}</td>
-                        <td>{mobility_analysis.get('black_total', 0)}</td>
-                        <td class="{self.get_advantage_class(mobility_analysis.get('white_total', 0) - mobility_analysis.get('black_total', 0))}">{mobility_analysis.get('white_total', 0) - mobility_analysis.get('black_total', 0)}</td>
+                        <td>{int(mobility_analysis.get('white_total', 0))}</td>
+                        <td>{int(mobility_analysis.get('black_total', 0))}</td>
+                        <td class="{self.get_advantage_class(mobility_analysis.get('white_total', 0) - mobility_analysis.get('black_total', 0))}">{int(mobility_analysis.get('white_total', 0)) - int(mobility_analysis.get('black_total', 0))}</td>
                         <td>{position_impact.get('space_advantage_change', 0):+.1f}</td>
                     </tr>
                     <tr>
@@ -890,9 +888,9 @@ class ComprehensiveHTMLGenerator:
                     </tr>
                     <tr>
                         <td><strong>Center Control</strong></td>
-                        <td>{center_control.get('white', 0)}</td>
-                        <td>{center_control.get('black', 0)}</td>
-                        <td class="{self.get_advantage_class(center_control.get('white', 0) - center_control.get('black', 0))}">{center_control.get('white', 0) - center_control.get('black', 0):+d}</td>
+                        <td>{center_control.get('white', 0):.0f}</td>
+                        <td>{center_control.get('black', 0):.0f}</td>
+                        <td class="{self.get_advantage_class(center_control.get('white', 0) - center_control.get('black', 0))}">{center_control.get('white', 0) - center_control.get('black', 0):+.0f}</td>
                         <td>{position_impact.get('center_control_change', 0):+.1f}</td>
                     </tr>
                     <tr>
@@ -909,19 +907,19 @@ class ComprehensiveHTMLGenerator:
             <div class="metrics-grid">
                 <div class="metric-card">
                     <div class="metric-label">Open Files</div>
-                    <div class="metric-value">{pawn_structure.get('open_files', 0)}</div>
+                    <div class="metric-value">{int(pawn_structure.get('open_files', 0))}</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-label">Half-Open Files</div>
-                    <div class="metric-value">{pawn_structure.get('half_open_files', 0)}</div>
+                    <div class="metric-value">{int(pawn_structure.get('half_open_files', 0))}</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-label">Pawn Islands (W/B)</div>
-                    <div class="metric-value">{pawn_structure.get('white_pawn_islands', 0)}/{pawn_structure.get('black_pawn_islands', 0)}</div>
+                    <div class="metric-value">{int(pawn_structure.get('white_pawn_islands', 0))}/{int(pawn_structure.get('black_pawn_islands', 0))}</div>
                 </div>
                 <div class="metric-card">
                     <div class="metric-label">Passed Pawns (W/B)</div>
-                    <div class="metric-value">{pawn_structure.get('white_passed_pawns', 0)}/{pawn_structure.get('black_passed_pawns', 0)}</div>
+                    <div class="metric-value">{int(pawn_structure.get('white_passed_pawns', 0))}/{int(pawn_structure.get('black_passed_pawns', 0))}</div>
                 </div>
             </div>
             
