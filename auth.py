@@ -469,135 +469,121 @@ def update_user_subscription(user_id: int, admin_user_id: int, **kwargs) -> bool
     finally:
         conn.close()
 
+
 def get_user_statistics(user_id: int) -> dict:
     """
-    Get comprehensive user statistics - FIXED VERSION.
-    
-    Args:
-        user_id: User's ID
-        
-    Returns:
-        Dictionary with user statistics
+    Get comprehensive user statistics.
+    - "correct_moves" is now count of moves with score > 0
+    - accuracy = correct_moves / total_moves * 100
+    - adds averages for score, centipawn_loss, rank, move_complexity, strategic_value
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     
+    stats = {}
     try:
-        stats = {}
-        
-        # Training statistics - fixed to use 'result' column
+        # TRAINING STATS: total, correct (score>0), avg time and new analytics
         cursor.execute('''
-            SELECT 
-                COUNT(*) as total_moves,
-                SUM(CASE WHEN result = 'correct' THEN 1 ELSE 0 END) as correct_moves,
-                AVG(time_taken) as avg_time
-            FROM user_moves 
+            SELECT
+                COUNT(*)                                   AS total_moves,
+                SUM(CASE WHEN score > 0 THEN 1 ELSE 0 END) AS correct_moves,
+                AVG(time_taken)                            AS avg_time,
+                AVG(score)                                 AS avg_score,
+                AVG(centipawn_loss)                        AS avg_centipawn_loss,
+                AVG(rank)                                  AS avg_rank,
+                AVG(move_complexity)                       AS avg_move_complexity,
+                AVG(strategic_value)                       AS avg_strategic_value
+            FROM user_moves
             WHERE user_id = ?
         ''', (user_id,))
+        row = cursor.fetchone() or (0, 0, 0, 0, 0, 0, 0, 0)
         
-        training_stats = cursor.fetchone()
-        if training_stats:
-            total_moves = training_stats[0] or 0
-            correct_moves = training_stats[1] or 0
-            avg_time = training_stats[2] or 0
-            
-            stats.update({
-                'total_moves': total_moves,
-                'correct_moves': correct_moves,
-                'accuracy': round((correct_moves / total_moves * 100), 2) if total_moves > 0 else 0,
-                'average_time': round(avg_time, 2)
-            })
-        else:
-            stats.update({
-                'total_moves': 0,
-                'correct_moves': 0,
-                'accuracy': 0,
-                'average_time': 0
-            })
+        total_moves, correct_moves, avg_time, avg_score, avg_cpl, avg_rank, avg_mc, avg_sv = row
+        stats.update({
+            'total_moves':            total_moves,
+            'correct_moves':          correct_moves,
+            'accuracy':               round((correct_moves / total_moves * 100), 2) if total_moves else 0,
+            'average_time':           round(avg_time or 0, 2),
+            'average_score':          round(avg_score or 0, 2),
+            'average_centipawn_loss': round(avg_cpl or 0, 2),
+            'average_rank':           round(avg_rank or 0, 2),
+            'average_move_complexity':round(avg_mc or 0, 2),
+            'average_strategic_value':round(avg_sv or 0, 2),
+        })
         
-        # Game analysis statistics - with error handling
+        # GAME ANALYSIS STATS
         try:
             cursor.execute('''
                 SELECT 
-                    COUNT(*) as games_analyzed,
-                    SUM(moves_analyzed) as total_moves_analyzed,
-                    AVG(total_time_spent) as avg_analysis_time
+                    COUNT(*)  AS games_analyzed,
+                    SUM(moves_analyzed)    AS total_moves_analyzed,
+                    AVG(total_time_spent)  AS avg_analysis_time
                 FROM user_game_analysis 
                 WHERE user_id = ?
             ''', (user_id,))
-            
-            game_stats = cursor.fetchone()
-            if game_stats:
-                stats.update({
-                    'games_analyzed': game_stats[0] or 0,
-                    'total_moves_analyzed': game_stats[1] or 0,
-                    'avg_analysis_time': round(game_stats[2] or 0, 2)
-                })
-            else:
-                stats.update({
-                    'games_analyzed': 0,
-                    'total_moves_analyzed': 0,
-                    'avg_analysis_time': 0
-                })
+            g = cursor.fetchone() or (0, 0, 0)
+            stats.update({
+                'games_analyzed':        g[0] or 0,
+                'total_moves_analyzed':  g[1] or 0,
+                'avg_analysis_time':     round(g[2] or 0, 2)
+            })
         except Exception as game_error:
             print(f"Error getting game analysis stats: {game_error}")
             stats.update({
-                'games_analyzed': 0,
-                'total_moves_analyzed': 0,
-                'avg_analysis_time': 0
+                'games_analyzed':        0,
+                'total_moves_analyzed':  0,
+                'avg_analysis_time':     0
             })
         
-        # Training sessions - with error handling
+        # TRAINING SESSIONS COUNT
         try:
             cursor.execute('''
-                SELECT COUNT(*) as session_count
-                FROM training_sessions 
-                WHERE user_id = ?
+                SELECT COUNT(*) AS session_count
+                  FROM training_sessions 
+                 WHERE user_id = ?
             ''', (user_id,))
-            
-            session_count = cursor.fetchone()
-            if session_count:
-                stats['training_sessions'] = session_count[0] or 0
-            else:
-                stats['training_sessions'] = 0
+            s = cursor.fetchone()
+            stats['training_sessions'] = (s[0] if s else 0) or 0
         except Exception as session_error:
             print(f"Error getting training session stats: {session_error}")
             stats['training_sessions'] = 0
         
-        # Recent activity - with error handling
+        # LAST MOVE TIMESTAMP
         try:
             cursor.execute('''
-                SELECT MAX(timestamp) as last_training
-                FROM user_moves 
-                WHERE user_id = ?
+                SELECT MAX(timestamp) AS last_training
+                  FROM user_moves 
+                 WHERE user_id = ?
             ''', (user_id,))
-            
-            last_training = cursor.fetchone()
-            if last_training and last_training[0]:
-                stats['last_training'] = last_training[0]
-            else:
-                stats['last_training'] = None
+            lt = cursor.fetchone()
+            stats['last_training'] = lt[0] if lt and lt[0] else None
         except Exception as activity_error:
             print(f"Error getting recent activity: {activity_error}")
             stats['last_training'] = None
-        
+
         return stats
-        
+
     except Exception as e:
         print(f"Error getting user statistics: {e}")
         return {
-            'total_moves': 0,
-            'correct_moves': 0,
-            'accuracy': 0,
-            'average_time': 0,
-            'games_analyzed': 0,
-            'total_moves_analyzed': 0,
-            'avg_analysis_time': 0,
-            'training_sessions': 0,
-            'last_training': None
+            'total_moves':             0,
+            'correct_moves':           0,
+            'accuracy':                0,
+            'average_time':            0,
+            'average_score':           0,
+            'average_centipawn_loss':  0,
+            'average_rank':            0,
+            'average_move_complexity': 0,
+            'average_strategic_value': 0,
+            'games_analyzed':          0,
+            'total_moves_analyzed':    0,
+            'avg_analysis_time':       0,
+            'training_sessions':       0,
+            'last_training':           None
         }
     finally:
         conn.close()
+
 
 def get_user_subscription(user_id: int) -> Optional[Dict[str, any]]:
     """Get user subscription information - ENHANCED VERSION."""

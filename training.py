@@ -1361,72 +1361,84 @@ def get_position_after_move(fen: str, uci_move: str) -> Optional[str]:
         print(f"Error in get_position_after_move: {e}")
         return fen
 
+
 def record_enhanced_user_move(user_id: int, position_data: Dict[str, Any], 
                             selected_move_data: Dict[str, Any], time_taken: float, result: str) -> bool:
-    """Record user move with proper database schema."""
+    """Record user move with full analytics into the user_moves schema."""
     try:
         conn = database.get_db_connection()
         cursor = conn.cursor()
         
-        position_id = position_data.get('id')
+        position_id   = position_data.get('id')
         move_notation = selected_move_data.get('move')
         
-        # Find the move_id from the moves table (if exists)
+        # 1) Look up or insert the base move record
         move_id = None
         if move_notation:
-            cursor.execute('''
-                SELECT id FROM moves 
-                WHERE position_id = ? AND move = ?
-                LIMIT 1
-            ''', (position_id, move_notation))
-            
-            move_record = cursor.fetchone()
-            if move_record:
-                move_id = move_record[0]
+            cursor.execute(
+                'SELECT id FROM moves WHERE position_id = ? AND move = ? LIMIT 1',
+                (position_id, move_notation)
+            )
+            row = cursor.fetchone()
+            if row:
+                move_id = row[0]
             else:
-                # Create move record if it doesn't exist
                 cursor.execute('''
                     INSERT OR IGNORE INTO moves (
-                        position_id, move, uci, score, depth, centipawn_loss, 
-                        classification, rank
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        position_id, move, uci, score, depth, centipawn_loss,
+                        classification, principal_variation, tactics,
+                        move_complexity, strategic_value, rank
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ''', (
                     position_id,
                     move_notation,
                     selected_move_data.get('uci', ''),
-                    round(selected_move_data.get('score', 0), 2),
+                    round(selected_move_data.get('score', 0),  2),
                     selected_move_data.get('depth', 0),
                     round(selected_move_data.get('centipawn_loss', 0), 2),
                     selected_move_data.get('classification', 'unknown'),
+                    selected_move_data.get('principal_variation', ''),
+                    json.dumps(selected_move_data.get('tactics', [])),
+                    selected_move_data.get('move_complexity', 0.0),
+                    selected_move_data.get('strategic_value', 0.0),
                     selected_move_data.get('rank', 999)
                 ))
-                
-                # Get the move_id we just created
-                cursor.execute('''
-                    SELECT id FROM moves 
-                    WHERE position_id = ? AND move = ?
-                    LIMIT 1
-                ''', (position_id, move_notation))
-                
-                move_record = cursor.fetchone()
-                if move_record:
-                    move_id = move_record[0]
+                # fetch the new id
+                cursor.execute(
+                    'SELECT id FROM moves WHERE position_id = ? AND move = ? LIMIT 1',
+                    (position_id, move_notation)
+                )
+                row = cursor.fetchone()
+                if row:
+                    move_id = row[0]
         
-        # Insert user move record
+        # 2) Now insert into user_moves with all the analytics columns
         if move_id is not None:
             cursor.execute('''
                 INSERT INTO user_moves (
-                    user_id, position_id, move_id, time_taken, 
-                    result, timestamp, session_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    user_id, position_id, move_id,
+                    time_taken, result, timestamp, session_id,
+                    score, depth, centipawn_loss, classification,
+                    principal_variation, tactics,
+                    move_complexity, strategic_value, rank
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                user_id, 
-                position_id, 
-                move_id, 
+                user_id,
+                position_id,
+                move_id,
                 round(time_taken, 2),
-                result, 
+                result,
                 datetime.now().isoformat(),
-                st.session_state.get('training_session_id')
+                st.session_state.get('training_session_id'),
+                selected_move_data.get('score', 0),
+                selected_move_data.get('depth', 0),
+                selected_move_data.get('centipawn_loss', 0),
+                selected_move_data.get('classification', 'unknown'),
+                selected_move_data.get('principal_variation', ''),
+                json.dumps(selected_move_data.get('tactics', [])),
+                selected_move_data.get('move_complexity', 0.0),
+                selected_move_data.get('strategic_value', 0.0),
+                selected_move_data.get('rank', 999)
             ))
         
         conn.commit()
@@ -1438,6 +1450,7 @@ def record_enhanced_user_move(user_id: int, position_data: Dict[str, Any],
     except Exception as e:
         print(f"❌ Error recording move: {e}")
         return False
+
 
 def determine_enhanced_move_result(selected_move_data: Dict[str, Any], position_data: Dict[str, Any]) -> str:
     """Determine move result using enhanced scoring algorithm."""
@@ -1820,7 +1833,7 @@ def generate_classic_html_report(analysis: Dict[str, Any]):
         # Use original HTML generator
         from html_generator import ComprehensiveHTMLGenerator  # Your original
         html_generator = ComprehensiveHTMLGenerator()
-        
+
         with st.spinner("🎨 Generating classic analysis report..."):
             output_path = html_generator.generate_epic_analysis_report(
                 position_data=position_data,

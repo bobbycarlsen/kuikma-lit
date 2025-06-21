@@ -137,24 +137,37 @@ def init_db():
         UNIQUE(position_id, move)
     )
     ''')
-    
-    # Enhanced UserMoves table
+        
+    # user_moves table with the new analytics columns
     cursor.execute('''
     CREATE TABLE IF NOT EXISTS user_moves (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER NOT NULL,
-        position_id INTEGER NOT NULL,
-        move_id INTEGER NOT NULL,
-        time_taken REAL NOT NULL,
-        result TEXT NOT NULL,
-        timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        openai_analysis TEXT,
-        session_id TEXT,
-        FOREIGN KEY (user_id) REFERENCES users (id),
+        id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id               INTEGER   NOT NULL,
+        position_id           INTEGER   NOT NULL,
+        move_id               INTEGER   NOT NULL,
+        time_taken            REAL      NOT NULL,
+        result                TEXT      NOT NULL,
+        timestamp             TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        openai_analysis       TEXT,
+        session_id            TEXT,
+
+        -- new analytics columns
+        score                 INTEGER,
+        depth                 INTEGER,
+        centipawn_loss        INTEGER,
+        classification        TEXT,
+        principal_variation   TEXT,
+        tactics               TEXT,    -- e.g. JSON array or comma‐separated
+        move_complexity       REAL,
+        strategic_value       REAL,
+        rank                  INTEGER,
+
+        FOREIGN KEY (user_id)     REFERENCES users     (id),
         FOREIGN KEY (position_id) REFERENCES positions (id),
-        FOREIGN KEY (move_id) REFERENCES moves (id)
+        FOREIGN KEY (move_id)     REFERENCES moves     (id)
     )
     ''')
+
     
     # User Settings table
     cursor.execute('''

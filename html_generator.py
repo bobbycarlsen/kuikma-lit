@@ -73,39 +73,24 @@ class ComprehensiveHTMLGenerator:
         except:
             return '<div style="border: 2px dashed #ddd; padding: 20px; text-align: center;">Result position unavailable</div>'
 
-    def color_code_pgn_notation(self, pgn_text: str) -> str:
-        """Color code PGN notation with piece-specific colors."""
-        if not pgn_text:
-            return pgn_text
-        
-        # Define piece colors and icons with their replacements
-        piece_replacements = {
-            # White pieces (lighter colors)
-            'K': '<span style="color: #4299e1; font-weight: 600;">♔</span>',
-            'Q': '<span style="color: #9f7aea; font-weight: 600;">♕</span>',
-            'R': '<span style="color: #38b2ac; font-weight: 600;">♖</span>',
-            'B': '<span style="color: #68d391; font-weight: 600;">♗</span>',
-            'N': '<span style="color: #fbb6ce; font-weight: 600;">♘</span>',
-            
-            # For black pieces, we'll handle them separately if context allows
+    def convert_to_piece_icons(self, move_string: str) -> str:
+        """Convert move notation to use piece icons instead of letters."""
+        piece_icons = {
+            'K': '♔', 'Q': '♕', 'R': '♖', 'B': '♗', 'N': '♘'
         }
         
-        result = pgn_text
+        if not move_string:
+            return move_string
         
-        # Replace piece letters with colored icons
-        for piece, replacement in piece_replacements.items():
-            # Use word boundary to avoid replacing letters within words
-            result = re.sub(r'\b' + piece + r'\b', replacement, result)
+        # Handle different move formats
+        result = move_string
         
-        # Color code special notation
-        # result = re.sub(r'\+', '<span style="color: #f56565; font-weight: 700;">+</span>', result)  # Check
-        result = re.sub(r'#', '<span style="color: #e53e3e; font-weight: 700;">#</span>', result)  # Checkmate
-        result = re.sub(r'!+', '<span style="color: #38a169; font-weight: 600;">!</span>', result)  # Good move
-        result = re.sub(r'\?+', '<span style="color: #e53e3e; font-weight: 600;">?</span>', result)  # Poor move
-        result = re.sub(r'0-0-0', '<span style="color: #805ad5; font-weight: 600;">O-O-O</span>', result)  # Long castling
-        result = re.sub(r'0-0', '<span style="color: #805ad5; font-weight: 600;">O-O</span>', result)  # Short castling
+        # Replace piece letters with icons (but not pawns)
+        for piece, icon in piece_icons.items():
+            result = result.replace(piece, icon)
         
         return result
+
 
     def get_dynamic_task_description(self, position_data: Dict[str, Any]) -> str:
         """Generate dynamic task description based on position data."""
@@ -428,8 +413,8 @@ class ComprehensiveHTMLGenerator:
         score_class = self.get_score_class(score)
         
         pv = best_move_data.get('principal_variation', '')
-        colored_pv = self.color_code_pgn_notation(pv)
-        colored_best_move = self.color_code_pgn_notation(best_move)
+        colored_pv = self.convert_to_piece_icons(pv)
+        colored_best_move = self.convert_to_piece_icons(best_move)
         
         tactics = best_move_data.get('tactics', [])
         
@@ -552,8 +537,8 @@ class ComprehensiveHTMLGenerator:
                 position_impact = variation.get('position_impact', {})
             
             score_display = self.format_score_display(score)
-            colored_pv = self.color_code_pgn_notation(pv_notation)
-            colored_move_name = self.color_code_pgn_notation(move_name)
+            colored_pv = self.convert_to_piece_icons(pv_notation)
+            colored_move_name = self.convert_to_piece_icons(move_name)
             tactics_text = ", ".join([t.replace("_", " ").title() for t in tactics]) if tactics else "None identified"
             
             # Parse the principal variation to get multiple board positions
@@ -677,7 +662,7 @@ class ComprehensiveHTMLGenerator:
             current_board_html = self.generate_space_control_board_html({'space_control': current_spatial})
             result_board_html = self.generate_space_control_board_html({'space_control': result_spatial})
             
-            colored_best_move = self.color_code_pgn_notation(best_move.get('move', 'N/A'))
+            colored_best_move = self.convert_to_piece_icons(best_move.get('move', 'N/A'))
             
             return f"""
             <section class="section">
@@ -757,7 +742,7 @@ class ComprehensiveHTMLGenerator:
             """
             
         except ImportError:
-            colored_best_move = self.color_code_pgn_notation(best_move.get('move', 'N/A'))
+            colored_best_move = self.convert_to_piece_icons(best_move.get('move', 'N/A'))
             return f"""
             <section class="section">
                 <div class="section-header">
@@ -787,12 +772,12 @@ class ComprehensiveHTMLGenerator:
             try:
                 history_data = json.loads(move_history)
                 pgn = history_data.get('pgn', '')
-                colored_pgn = self.color_code_pgn_notation(pgn)
-                if colored_pgn:
+                pgn = self.convert_to_piece_icons(pgn)
+                if pgn:
                     return f"""
                     <div style="background: #f8f9fa; padding: 1.5rem; border-radius: 12px; margin-top: 1.5rem; border: 1px solid #e2e8f0;">
                         <h4 style="color: #4a5568; margin-bottom: 1rem;">📜 Game History</h4>
-                        <div style="font-family: 'Monaco', 'Menlo', monospace; font-size: 0.9rem; line-height: 1.8; color: #2d3748; background: white; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">{colored_pgn}</div>
+                        <div style="font-family: 'Monaco', 'Menlo', monospace; font-size: 0.9rem; line-height: 1.8; color: #2d3748; background: white; padding: 1rem; border-radius: 8px; border: 1px solid #e2e8f0;">{pgn}</div>
                     </div>
                     """
             except:
@@ -948,11 +933,11 @@ class ComprehensiveHTMLGenerator:
             tactics_text = ", ".join([t.replace("_", " ").title() for t in tactics[:3]]) if tactics else "—"
             
             pv = move.get('principal_variation', '')
-            colored_pv = self.color_code_pgn_notation(pv)
+            colored_pv = self.convert_to_piece_icons(pv)
             if len(colored_pv) > 200:  # Approximate HTML length limit
                 colored_pv = colored_pv[:200] + "..."
             
-            colored_move = self.color_code_pgn_notation(move.get('move', ''))
+            colored_move = self.convert_to_piece_icons(move.get('move', ''))
             
             strategic_value = move.get('strategic_value', 0)
             complexity = move.get('move_complexity', 0)
