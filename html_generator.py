@@ -6,23 +6,31 @@ import chess
 import chess.svg
 from datetime import datetime
 from typing import Dict, Any, List, Optional, Tuple
+from move_comparison_analyzer import MoveComparisonAnalyzer
+
 
 class ComprehensiveHTMLGenerator:
     """Enhanced HTML generator with spatial analysis, color-coded notation, and variation boards."""
     
-    def __init__(self, output_dir: str = "kuikma_analysis"):
+    def __init__(self, output_dir: str = "kuikma_analysis", css_file_path: str = "comprehensive_chess_analysis.css"):
         self.output_dir = output_dir
+        self.css_file_path = css_file_path
         self.ensure_output_directory()
-    
+        self.move_comparison_analyzer = MoveComparisonAnalyzer(self)
+
     def ensure_output_directory(self):
         """Ensure output directory exists."""
         if not os.path.exists(self.output_dir):
             os.makedirs(self.output_dir)
 
-    def generate_chess_board_svg(self, fen: str, flipped: bool = False, size: int = 400, highlight_squares: List[str] = None) -> str:
-        """Generate SVG representation of chess board with optional square highlighting."""
+    def generate_chess_board_svg(self, fen: str, flipped: bool = None, size: int = 400, highlight_squares: List[str] = None) -> str:
+        """Generate SVG representation of chess board with proper orientation and optional square highlighting."""
         try:
             board = chess.Board(fen)
+            
+            # Auto-determine flip based on turn if not specified
+            if flipped is None:
+                flipped = not board.turn  # Flip if black to move
             
             # Create highlight style for moves
             highlight_style = ""
@@ -43,7 +51,7 @@ class ComprehensiveHTMLGenerator:
                 style=f"""
                 .square.light {{ fill: #f0d9b5; }}
                 .square.dark {{ fill: #b58863; }}
-                .piece {{ font-size: 45px; }}
+                .piece {{ font-size: {size * 0.11}px; }}
                 {highlight_style}
                 """
             )
@@ -51,10 +59,15 @@ class ComprehensiveHTMLGenerator:
         except Exception as e:
             return f'<div style="border: 2px solid #ddd; padding: 20px; text-align: center;">Chess board generation failed: {str(e)}</div>'
     
-    def generate_result_board_svg(self, fen: str, best_move_uci: str, flipped: bool = False) -> str:
-        """Generate board after best move is played with move highlighting."""
+    def generate_result_board_svg(self, fen: str, best_move_uci: str, flipped: bool = None, size: int = 400) -> str:
+        """Generate board after best move is played with move highlighting and proper orientation."""
         try:
             board = chess.Board(fen)
+            
+            # Auto-determine flip based on turn if not specified
+            if flipped is None:
+                flipped = not board.turn  # Flip if black to move
+                
             highlight_squares = []
             
             if best_move_uci:
@@ -69,7 +82,7 @@ class ComprehensiveHTMLGenerator:
                 except:
                     pass
             
-            return self.generate_chess_board_svg(board.fen(), flipped=flipped, highlight_squares=highlight_squares)
+            return self.generate_chess_board_svg(board.fen(), flipped=flipped, size=size, highlight_squares=highlight_squares)
         except:
             return '<div style="border: 2px dashed #ddd; padding: 20px; text-align: center;">Result position unavailable</div>'
 
@@ -190,7 +203,7 @@ class ComprehensiveHTMLGenerator:
         move_number = position_data.get('fullmove_number', 1)
         top_moves = position_data.get('top_moves', [])
         
-        # Board orientation
+        # Board orientation - flip based on turn
         flipped = (turn == 'black')
         
         # Get best move
@@ -198,13 +211,14 @@ class ComprehensiveHTMLGenerator:
         best_move_notation = best_move.get('move', 'N/A')
         best_move_uci = best_move.get('uci', '')
         
-        # Generate boards with move highlighting
+        # Generate boards with move highlighting and proper orientation
         current_board_svg = self.generate_chess_board_svg(fen, flipped=flipped)
         result_board_svg = self.generate_result_board_svg(fen, best_move_uci, flipped)
         
         # Generate all sections
         problem_section = self._generate_problem_section(current_board_svg, position_data)
         solution_section = self._generate_solution_section(current_board_svg, result_board_svg, best_move_notation, position_data)
+        comprehensive_move_comparison = self.move_comparison_analyzer.generate_comprehensive_move_comparison_section(position_data)
         comparative_analysis = self._generate_comparative_analysis_section(position_data, best_move)
         top_moves_section = self._generate_top_moves_section(top_moves, turn, move_number)
         
@@ -230,6 +244,9 @@ class ComprehensiveHTMLGenerator:
                     pass
             spatial_section = self._generate_spatial_comparison_section(fen, result_fen, best_move)
         
+        # Read CSS content
+        css_content = self._read_css_file()
+        
         # Build complete HTML
         html_template = f"""
     <!DOCTYPE html>
@@ -239,7 +256,7 @@ class ComprehensiveHTMLGenerator:
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Chess Position Analysis - {position_data.get('title', f'Position {position_id}')}</title>
         <style>
-            {self._generate_comprehensive_css(print_optimized)}
+            {css_content}
         </style>
     </head>
     <body>
@@ -257,6 +274,7 @@ class ComprehensiveHTMLGenerator:
 
             {problem_section}
             {solution_section}
+            {comprehensive_move_comparison}
             {spatial_section}
             {strategic_insights_section}
             {comparative_analysis}
@@ -282,6 +300,23 @@ class ComprehensiveHTMLGenerator:
         
         return output_path
 
+    def _read_css_file(self) -> str:
+        """Read CSS from external file, fallback to basic CSS if file not found."""
+        try:
+            with open(self.css_file_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except FileNotFoundError:
+            return """
+            /* Fallback CSS */
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 20px; }
+            .analysis-container { max-width: 1200px; margin: 0 auto; }
+            .section { margin: 2rem 0; padding: 1rem; background: #f8f9fa; border-radius: 8px; }
+            .section-header { font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; }
+            .analysis-table { width: 100%; border-collapse: collapse; margin: 1rem 0; }
+            .analysis-table th, .analysis-table td { padding: 0.5rem; border: 1px solid #ddd; }
+            .analysis-table th { background: #4299e1; color: white; }
+            """
+
     # === UTILITY METHODS ===
     
     def format_score_display(self, score) -> str:
@@ -294,12 +329,12 @@ class ComprehensiveHTMLGenerator:
                 mate_value = score['mate']
                 return f"M{mate_value}" if mate_value > 0 else f"M{abs(mate_value)}"
             elif 'cp' in score:
-                return f"{score['cp'] / 100:.2f}"
+                return f"{score['cp']:.2f}"
             else:
                 return "0.00"
         elif isinstance(score, (int, float)):
             if abs(score) > 900:  # Likely centipawns
-                return f"{score / 100:.2f}"
+                return f"{score:.2f}"
             else:
                 return f"{score:.2f}"
         else:
@@ -510,7 +545,9 @@ class ComprehensiveHTMLGenerator:
         """Generate enhanced principal variations section with board positions for each variation."""
         variation_analysis = position_data.get('variation_analysis', {})
         variations = variation_analysis.get('variations', [])
-        top_moves = position_data.get('top_moves', [])[:3]  # Fallback to top moves
+        top_moves = position_data.get('top_moves', [])  # Fallback to top moves
+        turn = position_data.get('turn', 'white').lower()
+        flipped = (turn == 'black')
         
         if not variations and not top_moves:
             return ""
@@ -547,20 +584,18 @@ class ComprehensiveHTMLGenerator:
             # Generate boards for key positions
             boards_html = ""
             if len(positions) > 1:
-                # Show all available positions of the variation
-                positions_to_show = positions[:max(20, len(positions))]
-                boards_count = len(positions_to_show)
+                # Show first 8 positions of the variation with proper orientation
+                positions_to_show = positions[:min(20, len(positions))]
                 boards_html = f"""
-                <h4>Variation Progression</h4>
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 1rem 0;">
+                <div class="variation-boards-row">
                 """
                 
                 for pos_idx, pos_fen in enumerate(positions_to_show):
-                    board_svg = self.generate_chess_board_svg(pos_fen, False, 200)
-                    move_label = f"Move {pos_idx + 1}" if pos_idx > 0 else "Starting"
+                    board_svg = self.generate_chess_board_svg(pos_fen, flipped, 160)
+                    move_label = f"Start" if pos_idx == 0 else f"Move {pos_idx}"
                     boards_html += f"""
-                    <div style="text-align: center;">
-                        <div style="font-size: 0.9rem; color: #666; margin-bottom: 0.5rem;">{move_label}</div>
+                    <div class="variation-board-item">
+                        <div class="variation-board-label">{move_label}</div>
                         {board_svg}
                     </div>
                     """
@@ -568,73 +603,47 @@ class ComprehensiveHTMLGenerator:
                 boards_html += "</div>"
             else:
                 # Fallback to single final position
-                final_board_svg = self.generate_chess_board_svg(final_fen, False, 300)
+                final_board_svg = self.generate_chess_board_svg(final_fen, flipped, 200)
                 boards_html = f"""
-                <h4>Final Position</h4>
-                <div style="text-align: center; margin: 1rem 0;">
-                    {final_board_svg}
+                <div class="variation-boards-row">
+                    <div class="variation-board-item">
+                        <div class="variation-board-label">Final Position</div>
+                        {final_board_svg}
+                    </div>
                 </div>
                 """
             
+            card_class = "variation-move-set best-variation" if i == 0 else "variation-move-set"
+            header_class = "variation-set-header best-header" if i == 0 else "variation-set-header"
+            
             variations_html += f"""
-            <div class="variation-card">
-                <div class="variation-header">
-                    Variation {i+1}: {colored_move_name} ({score_display})
+            <div class="{card_class}">
+                <div class="{header_class}">
+                    <div class="variation-set-title">#{i+1} - {colored_move_name}</div>
+                    <div class="variation-set-meta">
+                        <span class="score-badge {self.get_score_class(score)}">{score_display}</span>
+                        <span class="cp-badge">CP Loss: {variation.get('centipawn_loss', 0)}</span>
+                        <span class="classification-badge">{variation.get('classification', 'Unknown')}</span>
+                    </div>
                 </div>
-                <div class="variation-content">
-                    <div class="metrics-grid">
-                        <div class="metric-card">
-                            <div class="metric-label">Engine Score</div>
-                            <div class="metric-value {self.get_score_class(score)}">{score_display}</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-label">Classification</div>
-                            <div class="metric-value">{variation.get('classification', 'Unknown')}</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-label">CP Loss</div>
-                            <div class="metric-value">{variation.get('centipawn_loss', 0)}</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-label">Depth</div>
-                            <div class="metric-value">{variation.get('depth', 0)}</div>
-                        </div>
-                    </div>
-                    
-                    {boards_html}
-                    
-                    <h4>Principal Variation</h4>
-                    <div class="variation-moves">{colored_pv}</div>
-                    
-                    <h4>Tactical Elements</h4>
-                    <p style="background: #f8f9fa; padding: 1rem; border-radius: 8px; margin: 1rem 0; border: 1px solid #e2e8f0;">{tactics_text}</p>
-                    
-                    <h4>Position Impact Analysis</h4>
-                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 1rem; margin: 1rem 0;">
-                        <div style="background: #f0f8f0; padding: 1rem; border-radius: 8px; text-align: center;">
-                            <strong>Material</strong><br>{position_impact.get('material_change', 0):+d}
-                        </div>
-                        <div style="background: #f8f0f8; padding: 1rem; border-radius: 8px; text-align: center;">
-                            <strong>King Safety</strong><br>{position_impact.get('king_safety_impact', 0):+.1f}
-                        </div>
-                        <div style="background: #f0f0f8; padding: 1rem; border-radius: 8px; text-align: center;">
-                            <strong>Center Control</strong><br>{position_impact.get('center_control_change', 0):+.1f}
-                        </div>
-                        <div style="background: #f8f8f0; padding: 1rem; border-radius: 8px; text-align: center;">
-                            <strong>Initiative</strong><br>{position_impact.get('initiative_change', 0):+.1f}
-                        </div>
-                    </div>
+                
+                {boards_html}
+                
+                <div class="variation-pv-line">
+                    <strong>Principal Variation:</strong> {colored_pv[:120]}
                 </div>
             </div>
             """
         
         return f"""
-        <section class="section">
+        <section class="section enhanced-variation-boards">
             <div class="section-header">
-                🎯 Enhanced Principal Variations Analysis
+                🎯 Variation Progression Analysis
             </div>
-            <p>Detailed breakdown of the top variations showing position progression and comprehensive evaluation.</p>
-            {variations_html}
+            <p>See how each candidate move develops over time with key position snapshots.</p>
+            <div class="variation-progression-container">
+                {variations_html}
+            </div>
         </section>
         <div class="page-break"></div>
         """
@@ -643,6 +652,8 @@ class ComprehensiveHTMLGenerator:
         """Generate spatial analysis comparison between current and result positions."""
         try:
             import spatial_analysis
+            turn = chess.Board(current_fen).turn
+            flipped = not turn  # Flip if black to move
             
             # Get spatial data for both positions
             current_board = chess.Board(current_fen)
@@ -659,83 +670,84 @@ class ComprehensiveHTMLGenerator:
                     pass
             
             # Generate comparison HTML
-            current_board_html = self.generate_space_control_board_html({'space_control': current_spatial})
-            result_board_html = self.generate_space_control_board_html({'space_control': result_spatial})
+            current_board_html = self.generate_space_control_board_html({'space_control': current_spatial}, size=200)
+            result_board_html = self.generate_space_control_board_html({'space_control': result_spatial}, size=200)
             
             colored_best_move = self.convert_to_piece_icons(best_move.get('move', 'N/A'))
             
+            # Create spatial comparison table
+            spatial_table = f"""
+            <table class="spatial-comparison-table">
+                <thead>
+                    <tr>
+                        <th>Metric</th>
+                        <th>Current</th>
+                        <th>After Move</th>
+                        <th>Change</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr class="spatial-best-row">
+                        <td><strong>White Territory</strong></td>
+                        <td>{current_spatial.get('white_space_percentage', 0):.1f}%</td>
+                        <td>{result_spatial.get('white_space_percentage', 0):.1f}%</td>
+                        <td class="{self.get_advantage_class(result_spatial.get('white_space_percentage', 0) - current_spatial.get('white_space_percentage', 0))}">{result_spatial.get('white_space_percentage', 0) - current_spatial.get('white_space_percentage', 0):+.1f}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Black Territory</strong></td>
+                        <td>{current_spatial.get('black_space_percentage', 0):.1f}%</td>
+                        <td>{result_spatial.get('black_space_percentage', 0):.1f}%</td>
+                        <td class="{self.get_advantage_class(current_spatial.get('black_space_percentage', 0) - result_spatial.get('black_space_percentage', 0))}">{result_spatial.get('black_space_percentage', 0) - current_spatial.get('black_space_percentage', 0):+.1f}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Contested</strong></td>
+                        <td>{current_spatial.get('contested_percentage', 0):.1f}%</td>
+                        <td>{result_spatial.get('contested_percentage', 0):.1f}%</td>
+                        <td class="change-neutral">{result_spatial.get('contested_percentage', 0) - current_spatial.get('contested_percentage', 0):+.1f}%</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Space Advantage</strong></td>
+                        <td>{current_spatial.get('space_advantage', 0):+.0f}</td>
+                        <td>{result_spatial.get('space_advantage', 0):+.0f}</td>
+                        <td class="{self.get_advantage_class(result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0))}">{result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0):+.0f}</td>
+                    </tr>
+                </tbody>
+            </table>
+            """
+            
             return f"""
-            <section class="section">
+            <section class="section spatial-control-comparison">
                 <div class="section-header">
-                    🗺️ Spatial Analysis Comparison
+                    🗺️ Spatial Control Evolution
                 </div>
-                <div class="section-content">
-                    <p>Advanced spatial analysis comparing territory control before and after the best move.</p>
-                    
-                    <div class="side-by-side">
-                        <div>
-                            <h3 style="margin-bottom: 20px; color: #4a5568; text-align: center;">🎯 Current Position</h3>
-                            {current_board_html}
+                <p>How each move reshapes the territorial landscape of the position.</p>
+                
+                <div class="spatial-comparison-layout">
+                    <div>
+                        <h3 style="margin-bottom: 20px; color: #4a5568;">Spatial Control Visualization</h3>
+                        <div class="spatial-boards-grid">
+                            <div class="spatial-comparison-item">
+                                <h4>Current Position</h4>
+                                {current_board_html}
+                            </div>
+                            <div class="spatial-comparison-item">
+                                <h4>After {colored_best_move}</h4>
+                                {result_board_html}
+                            </div>
                         </div>
-                        <div>
-                            <h3 style="margin-bottom: 20px; color: #4a5568; text-align: center;">🌟 After Best Move: {colored_best_move}</h3>
-                            {result_board_html}
-                        </div>
                     </div>
                     
-                    <div style="margin-top: 30px;">
-                        <h3 style="margin-bottom: 20px; color: #4a5568;">📊 Spatial Metrics Comparison</h3>
-                        <table class="analysis-table">
-                            <thead>
-                                <tr>
-                                    <th>Metric</th>
-                                    <th>Current Position</th>
-                                    <th>After Best Move</th>
-                                    <th>Change</th>
-                                    <th>Impact</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><strong>White Territory</strong></td>
-                                    <td>{current_spatial.get('white_space_percentage', 0):.1f}%</td>
-                                    <td>{result_spatial.get('white_space_percentage', 0):.1f}%</td>
-                                    <td class="{self.get_advantage_class(result_spatial.get('white_space_percentage', 0) - current_spatial.get('white_space_percentage', 0))}">{result_spatial.get('white_space_percentage', 0) - current_spatial.get('white_space_percentage', 0):+.1f}%</td>
-                                    <td>{'High' if abs(result_spatial.get('white_space_percentage', 0) - current_spatial.get('white_space_percentage', 0)) > 5 else 'Low'}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Black Territory</strong></td>
-                                    <td>{current_spatial.get('black_space_percentage', 0):.1f}%</td>
-                                    <td>{result_spatial.get('black_space_percentage', 0):.1f}%</td>
-                                    <td class="{self.get_advantage_class(current_spatial.get('black_space_percentage', 0) - result_spatial.get('black_space_percentage', 0))}">{result_spatial.get('black_space_percentage', 0) - current_spatial.get('black_space_percentage', 0):+.1f}%</td>
-                                    <td>{'High' if abs(result_spatial.get('black_space_percentage', 0) - current_spatial.get('black_space_percentage', 0)) > 5 else 'Low'}</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Contested Squares</strong></td>
-                                    <td>{current_spatial.get('contested_percentage', 0):.1f}%</td>
-                                    <td>{result_spatial.get('contested_percentage', 0):.1f}%</td>
-                                    <td class="change-neutral">{result_spatial.get('contested_percentage', 0) - current_spatial.get('contested_percentage', 0):+.1f}%</td>
-                                    <td>Medium</td>
-                                </tr>
-                                <tr>
-                                    <td><strong>Space Advantage</strong></td>
-                                    <td>{current_spatial.get('space_advantage', 0):+.0f}</td>
-                                    <td>{result_spatial.get('space_advantage', 0):+.0f}</td>
-                                    <td class="{self.get_advantage_class(result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0))}">{result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0):+.0f}</td>
-                                    <td>{'Critical' if abs(result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0)) > 3 else 'Moderate'}</td>
-                                </tr>
-                            </tbody>
-                        </table>
+                    <div class="spatial-stats-table">
+                        <h3 style="margin-bottom: 20px; color: #4a5568;">Spatial Metrics</h3>
+                        {spatial_table}
                     </div>
-                    
-                    <div style="background: #e6fffa; padding: 1.5rem; border-radius: 12px; margin-top: 2rem; border-left: 4px solid #38b2ac;">
-                        <h4 style="color: #234e52; margin-bottom: 1rem;">💡 Spatial Analysis Insights</h4>
-                        <p style="color: #234e52; line-height: 1.6;">
-                            The best move {'improves' if result_spatial.get('space_advantage', 0) > current_spatial.get('space_advantage', 0) else 'maintains' if result_spatial.get('space_advantage', 0) == current_spatial.get('space_advantage', 0) else 'reduces'} 
-                            White's space advantage by {abs(result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0)):.0f} squares. 
-                            Territory control shifts of more than 5% indicate significant positional changes.
-                        </p>
-                    </div>
+                </div>
+                
+                <div class="spatial-insights">
+                    <h4>💡 Spatial Analysis Insights</h4>
+                    <p>The best move {'improves' if result_spatial.get('space_advantage', 0) > current_spatial.get('space_advantage', 0) else 'maintains' if result_spatial.get('space_advantage', 0) == current_spatial.get('space_advantage', 0) else 'reduces'} 
+                    White's space advantage by {abs(result_spatial.get('space_advantage', 0) - current_spatial.get('space_advantage', 0)):.0f} squares. 
+                    Territory control shifts of more than 5% indicate significant positional changes.</p>
                 </div>
             </section>
             <div class="page-break"></div>
@@ -744,9 +756,9 @@ class ComprehensiveHTMLGenerator:
         except ImportError:
             colored_best_move = self.convert_to_piece_icons(best_move.get('move', 'N/A'))
             return f"""
-            <section class="section">
+            <section class="section spatial-control-comparison">
                 <div class="section-header">
-                    🗺️ Spatial Analysis Comparison
+                    🗺️ Spatial Control Evolution
                 </div>
                 <div style="text-align: center; color: #718096; font-style: italic; padding: 3rem; background: #f8f9fa; border-radius: 12px; border: 2px dashed #e2e8f0;">
                     <h4 style="color: #4a5568; margin-bottom: 1rem;">Advanced Spatial Analysis Module</h4>
@@ -918,7 +930,7 @@ class ComprehensiveHTMLGenerator:
             return ""
         
         moves_html = ""
-        for i, move in enumerate(top_moves[:10]):  # Top 10 moves
+        for i, move in enumerate(top_moves[:20]):  # Top 10 moves
             score = move.get('score', 0)
             score_display = self.format_score_display(score)
             score_class = self.get_score_class(score)
@@ -997,7 +1009,7 @@ class ComprehensiveHTMLGenerator:
     # Add all remaining methods here with color coding applied...
     # For brevity, including key helper methods
 
-    def generate_space_control_board_html(self, metrics: Dict[str, Any]) -> str:
+    def generate_space_control_board_html(self, metrics: Dict[str, Any], size: int = 400) -> str:
         """Generate space control board visualization as HTML with wooden layout and control icons."""
         try:
             space_control = metrics.get('space_control', {})
@@ -1010,11 +1022,14 @@ class ComprehensiveHTMLGenerator:
             # Define classic wooden board colors
             light_color = '#f0d9b5'
             dark_color = '#b58863'
+            
+            # Scale size for compact display
+            cell_size = max(20, size // 10)
 
             # Start responsive container
             board_html = (
-                '<div style="overflow-x:auto; margin:0 auto; max-width:100%;">'
-                '<table style="border-collapse: collapse; border: 2px solid #e2e8f0; margin: 0 auto;">'
+                f'<div style="overflow-x:auto; margin:0 auto; max-width:100%;">'
+                f'<table style="border-collapse: collapse; border: 2px solid #e2e8f0; margin: 0 auto;">'
             )
 
             # Build board rows
@@ -1038,9 +1053,9 @@ class ComprehensiveHTMLGenerator:
                         symbol = '🟢'  # Neutral
 
                     board_html += (
-                        f'<td style="width:40px; height:40px; background-color:{bg_color}; '  
+                        f'<td style="width:{cell_size}px; height:{cell_size}px; background-color:{bg_color}; '  
                         'text-align:center; vertical-align:middle; border:1px solid #d1d5db; '  
-                        'font-size:16px; line-height:40px;">'
+                        f'font-size:{cell_size//2}px; line-height:{cell_size}px;">'
                         f'{symbol}'
                         '</td>'
                     )
@@ -1239,370 +1254,4 @@ class ComprehensiveHTMLGenerator:
         </section>
         <div class="page-break"></div>
         """
-
-    def _generate_comprehensive_css(self, print_optimized: bool = True) -> str:
-        """Generate comprehensive CSS for mobile and print optimization."""
-        return """
-    /* === RESPONSIVE FOUNDATION === */
-    * {
-        box-sizing: border-box;
-        margin: 0;
-        padding: 0;
-    }
-
-    body {
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        line-height: 1.6;
-        color: #2d3748;
-        background: #f7fafc;
-        font-size: 16px;
-    }
-
-    .analysis-container {
-        max-width: 1200px;
-        margin: 0 auto;
-        padding: 20px;
-        background: white;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-        border-radius: 12px;
-    }
-
-    /* === TYPOGRAPHY === */
-    h1 { font-size: 2.5rem; color: #1a202c; margin-bottom: 1rem; }
-    h2 { font-size: 2rem; color: #2d3748; margin: 2rem 0 1rem; }
-    h3 { font-size: 1.5rem; color: #4a5568; margin: 1.5rem 0 0.75rem; }
-    h4 { font-size: 1.25rem; color: #718096; margin: 1rem 0 0.5rem; }
-
-    /* === HEADER === */
-    .report-header {
-        text-align: center;
-        padding: 2rem 0;
-        border-bottom: 3px solid #e2e8f0;
-        margin-bottom: 2rem;
-    }
-
-    .position-meta {
-        display: flex;
-        justify-content: center;
-        gap: 2rem;
-        margin-top: 1rem;
-        flex-wrap: wrap;
-    }
-
-    .meta-item {
-        background: #4299e1;
-        color: white;
-        padding: 8px 16px;
-        border-radius: 20px;
-        font-weight: 600;
-        font-size: 0.9rem;
-    }
-
-    /* === SECTIONS === */
-    .section {
-        margin: 3rem 0;
-        padding: 2rem;
-        background: #f8f9fa;
-        border-radius: 12px;
-        border-left: 5px solid #4299e1;
-    }
-
-    .section-header {
-        font-size: 1.5rem;
-        font-weight: 700;
-        color: #1a202c;
-        margin-bottom: 1rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-    }
-
-    /* === BOARD LAYOUTS === */
-    .side-by-side {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 3rem;
-        align-items: start;
-    }
-
-    .board-container {
-        background: white;
-        padding: 1rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        text-align: center;
-    }
-
-    .board-label {
-        font-weight: 600;
-        color: #4a5568;
-        margin-bottom: 1rem;
-        font-size: 1.1rem;
-    }
-
-    /* === TABLES === */
-    .analysis-table {
-        width: 100%;
-        border-collapse: collapse;
-        margin: 1.5rem 0;
-        background: white;
-        border-radius: 8px;
-        overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    .analysis-table th {
-        background: #4299e1;
-        color: white;
-        padding: 1rem;
-        text-align: left;
-        font-weight: 600;
-    }
-
-    .analysis-table td {
-        padding: 0.75rem 1rem;
-        border-bottom: 1px solid #e2e8f0;
-    }
-
-    .analysis-table tr:nth-child(even) {
-        background: #f8f9fa;
-    }
-
-    .analysis-table tr:hover {
-        background: #e6fffa;
-    }
-
-    /* === SCORE STYLING === */
-    .score-positive { color: #38a169; font-weight: 600; }
-    .score-negative { color: #e53e3e; font-weight: 600; }
-    .score-neutral { color: #718096; font-weight: 600; }
-
-    /* === BADGES AND TAGS === */
-    .move-classification {
-        padding: 4px 12px;
-        border-radius: 16px;
-        font-size: 0.8rem;
-        font-weight: 600;
-        text-transform: uppercase;
-    }
-
-    .classification-great { background: #c6f6d5; color: #22543d; }
-    .classification-good { background: #bee3f8; color: #2a4365; }
-    .classification-decent { background: #ffd6cc; color: #9c4221; }
-    .classification-inaccuracy { background: #fef5e7; color: #975a16; }
-    .classification-mistake { background: #fed7e2; color: #97266d; }
-    .classification-blunder { background: #fed7d7; color: #742a2a; }
-
-    .theme-tag {
-        display: inline-block;
-        background: #e6fffa;
-        color: #234e52;
-        padding: 6px 12px;
-        border-radius: 20px;
-        margin: 3px;
-        font-size: 0.85rem;
-        font-weight: 500;
-    }
-
-    /* === METRICS VISUALIZATION === */
-    .metrics-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-        gap: 1.5rem;
-        margin: 2rem 0;
-    }
-
-    .metric-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        border-left: 4px solid #4299e1;
-    }
-
-    .metric-label {
-        font-size: 0.9rem;
-        color: #718096;
-        margin-bottom: 0.5rem;
-        font-weight: 500;
-    }
-
-    .metric-value {
-        font-size: 1.8rem;
-        font-weight: 700;
-        color: #1a202c;
-    }
-
-    .metric-change {
-        font-size: 0.9rem;
-        margin-top: 0.5rem;
-    }
-
-    .change-positive { color: #38a169; }
-    .change-negative { color: #e53e3e; }
-    .change-neutral { color: #718096; }
-
-    /* === INSIGHTS === */
-    .insights-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-        gap: 1.5rem;
-        margin: 2rem 0;
-    }
-
-    .insight-card {
-        background: white;
-        padding: 1.5rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        border-top: 4px solid #48bb78;
-    }
-
-    .insight-card h4 {
-        color: #2d3748;
-        margin-bottom: 0.75rem;
-    }
-
-    .insight-card ul {
-        list-style: none;
-        padding: 0;
-    }
-
-    .insight-card li {
-        padding: 0.5rem 0;
-        border-bottom: 1px solid #e2e8f0;
-        position: relative;
-        padding-left: 1.5rem;
-    }
-
-    .insight-card li:before {
-        content: "▶";
-        position: absolute;
-        left: 0;
-        color: #4299e1;
-        font-size: 0.8rem;
-    }
-
-    /* === VARIATIONS === */
-    .variation-card {
-        background: white;
-        margin: 1rem 0;
-        border-radius: 12px;
-        overflow: hidden;
-        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-    }
-
-    .variation-header {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem 1.5rem;
-        font-weight: 600;
-    }
-
-    .variation-content {
-        padding: 1.5rem;
-    }
-
-    .variation-moves {
-        font-family: 'Monaco', 'Menlo', monospace;
-        background: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-        font-size: 0.9rem;
-        line-height: 1.8;
-        overflow-x: auto;
-    }
-
-    /* === SPATIAL ANALYSIS === */
-    .space-control-board {
-        display: grid;
-        grid-template-columns: repeat(8, 1fr);
-        gap: 2px;
-        background: #4a5568;
-        padding: 1rem;
-        border-radius: 12px;
-        max-width: 400px;
-        margin: 2rem auto;
-    }
-
-    .space-square {
-        aspect-ratio: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 600;
-        font-size: 0.8rem;
-        border-radius: 4px;
-    }
-
-    .space-white { background: #3182ce; color: white; }
-    .space-black { background: #805ad5; color: white; }
-    .space-contested { background: #ed8936; color: white; }
-    .space-neutral { background: #e2e8f0; color: #4a5568; }
-
-    /* === MOBILE RESPONSIVENESS === */
-    @media (max-width: 768px) {
-        .analysis-container {
-            padding: 1rem;
-            margin: 0;
-            border-radius: 0;
-        }
-        
-        .side-by-side {
-            grid-template-columns: 1fr;
-            gap: 2rem;
-        }
-        
-        .position-meta {
-            flex-direction: column;
-            gap: 0.5rem;
-        }
-        
-        .metrics-grid {
-            grid-template-columns: 1fr;
-        }
-        
-        .insights-grid {
-            grid-template-columns: 1fr;
-        }
-        
-        h1 { font-size: 2rem; }
-        h2 { font-size: 1.5rem; }
-        
-        .analysis-table {
-            font-size: 0.9rem;
-        }
-        
-        .analysis-table th,
-        .analysis-table td {
-            padding: 0.5rem;
-        }
-    }
-
-    @media (max-width: 480px) {
-        body { font-size: 14px; }
-        
-        .section {
-            padding: 1rem;
-            margin: 2rem 0;
-        }
-        
-        .board-container {
-            padding: 0.5rem;
-        }
-        
-        .space-control-board {
-            max-width: 300px;
-        }
-    }
-
-    /* === PRINT OPTIMIZATION === */
-    @media print {
-        .page-break { 
-            page-break-after: always;   /* older spec */
-            break-after: page;          /* modern spec */
-        }
-    }
-    """
 

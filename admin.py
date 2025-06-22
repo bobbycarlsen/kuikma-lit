@@ -15,7 +15,7 @@ from database import (get_db_connection, get_user_verification_stats,
                      get_subscription_usage_stats, log_admin_action,
                      database_sanity_check, optimize_database, get_all_tables,
                      get_table_info, get_table_data, update_table_row, delete_table_row,
-                     reset_database, export_database_with_schema)
+                     reset_database, export_database_with_schema, clean_orphaned_records)
 from auth import (verify_user, get_users_for_verification, update_user_subscription,
                  get_user_subscription, check_user_access, get_user_info, get_user_statistics)
 from config import config

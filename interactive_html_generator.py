@@ -1764,13 +1764,13 @@ class InteractiveHTMLGenerator:
                     return score.mate > 0 ? 'M' + score.mate : 'M' + Math.abs(score.mate);
                 }}
                 if (score.cp !== undefined) {{
-                    return (score.cp / 100).toFixed(2);
+                    return (score.cp).toFixed(2);
                 }}
             }}
             
             if (typeof score === 'number') {{
                 if (Math.abs(score) > 900) {{
-                    return (score / 100).toFixed(2);
+                    return (score).toFixed(2);
                 }}
                 return score.toFixed(2);
             }}
@@ -2428,12 +2428,12 @@ class InteractiveHTMLGenerator:
                 mate_value = score['mate']
                 return f"M{mate_value}" if mate_value > 0 else f"M{abs(mate_value)}"
             elif 'cp' in score:
-                return f"{score['cp'] / 100:.2f}"
+                return f"{score['cp']:.2f}"
             else:
                 return "0.00"
         elif isinstance(score, (int, float)):
             if abs(score) > 900:  # Likely centipawns
-                return f"{score / 100:.2f}"
+                return f"{score:.2f}"
             else:
                 return f"{score:.2f}"
         else:
